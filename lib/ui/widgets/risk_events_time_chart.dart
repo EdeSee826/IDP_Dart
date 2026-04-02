@@ -8,9 +8,11 @@ class RiskEventsTimeChart extends StatelessWidget {
   const RiskEventsTimeChart({
     super.key,
     required this.events,
+    this.compact = false,
   });
 
   final List<RiskEvent> events;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +20,7 @@ class RiskEventsTimeChart extends StatelessWidget {
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: EdgeInsets.all(compact ? 10 : 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -35,13 +37,13 @@ class RiskEventsTimeChart extends StatelessWidget {
               fontSize: 15,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: compact ? 8 : 12),
           SizedBox(
-            height: 210,
+            height: compact ? 150 : 210,
             child: ordered.isEmpty
                 ? const Center(child: Text('No events yet.'))
                 : LineChart(
-                    _buildData(ordered),
+                    _buildData(ordered, compact),
                   ),
           ),
         ],
@@ -49,7 +51,7 @@ class RiskEventsTimeChart extends StatelessWidget {
     );
   }
 
-  LineChartData _buildData(List<RiskEvent> ordered) {
+  LineChartData _buildData(List<RiskEvent> ordered, bool compact) {
     final spots = <FlSpot>[];
     for (var i = 0; i < ordered.length; i++) {
       spots.add(FlSpot(i.toDouble(), (i + 1).toDouble()));
@@ -81,18 +83,21 @@ class RiskEventsTimeChart extends StatelessWidget {
         leftTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 28,
+            reservedSize: compact ? 22 : 28,
             interval: 1,
             getTitlesWidget: (value, meta) => Text(
               value.toInt().toString(),
-              style: const TextStyle(fontSize: 10, color: Color(0xFF667085)),
+              style: TextStyle(
+                fontSize: compact ? 9 : 10,
+                color: const Color(0xFF667085),
+              ),
             ),
           ),
         ),
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: 30,
+            reservedSize: compact ? 24 : 30,
             interval: maxX > 3 ? (maxX / 2).ceilToDouble() : 1,
             getTitlesWidget: (value, meta) {
               final index = value.toInt();
@@ -100,11 +105,13 @@ class RiskEventsTimeChart extends StatelessWidget {
                 return const SizedBox.shrink();
               }
               return Padding(
-                padding: const EdgeInsets.only(top: 6),
+                padding: EdgeInsets.only(top: compact ? 2 : 6),
                 child: Text(
                   DateFormat('HH:mm').format(ordered[index].timestamp),
-                  style:
-                      const TextStyle(fontSize: 10, color: Color(0xFF667085)),
+                  style: TextStyle(
+                    fontSize: compact ? 8 : 10,
+                    color: const Color(0xFF667085),
+                  ),
                 ),
               );
             },
@@ -115,9 +122,9 @@ class RiskEventsTimeChart extends StatelessWidget {
         LineChartBarData(
           spots: spots,
           isCurved: true,
-          barWidth: 3,
+          barWidth: compact ? 2.4 : 3,
           color: const Color(0xFFD14343),
-          dotData: const FlDotData(show: true),
+          dotData: FlDotData(show: !compact),
           belowBarData: BarAreaData(
             show: true,
             color: const Color(0xFFD14343).withValues(alpha: 0.15),

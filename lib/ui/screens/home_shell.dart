@@ -14,86 +14,11 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _selectedIndex = 0;
-  bool _reminderShown = false;
 
   static const _pages = [
     PatientDashboardScreen(),
     EventLogScreen(),
   ];
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _reminderShown) {
-        return;
-      }
-      _reminderShown = true;
-      _showCareReminderDialog();
-    });
-  }
-
-  Future<void> _showCareReminderDialog() async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Daily Care Reminder'),
-          content: const SizedBox(
-            width: 460,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Keep line dressing clean, dry, and intact.'),
-                  SizedBox(height: 8),
-                  Text('Use waterproof cover when showering.'),
-                  SizedBox(height: 10),
-                  Text('Check for:',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                  SizedBox(height: 4),
-                  Text('- Redness'),
-                  Text('- Swelling'),
-                  Text('- Leakage'),
-                  SizedBox(height: 10),
-                  Text(
-                    'Flushing schedule reminder:',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  SizedBox(height: 4),
-                  Text('- Flush line at prescribed times (for example daily)'),
-                  Text('- Use correct method (saline / heparin)'),
-                  SizedBox(height: 10),
-                  Text('Daily precautions:',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                  SizedBox(height: 4),
-                  Text('- Avoid heavy lifting'),
-                  Text('- Avoid excessive bending'),
-                  Text('- Do not pull or twist catheter'),
-                  SizedBox(height: 10),
-                  Text('Immediate alert if:',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                  SizedBox(height: 4),
-                  Text('- Fever'),
-                  Text('- Pain at site'),
-                  Text('- Swelling of arm'),
-                  Text('- Pus or unusual discharge'),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('I Understand'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -111,8 +36,28 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           ),
         ],
       ),
-      body: _pages[_selectedIndex],
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 280),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) {
+          final offsetAnimation = Tween<Offset>(
+            begin: const Offset(0.03, 0),
+            end: Offset.zero,
+          ).animate(animation);
+
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(position: offsetAnimation, child: child),
+          );
+        },
+        child: KeyedSubtree(
+          key: ValueKey<int>(_selectedIndex),
+          child: _pages[_selectedIndex],
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
+        animationDuration: const Duration(milliseconds: 280),
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
           setState(() {

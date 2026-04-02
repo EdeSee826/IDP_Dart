@@ -22,16 +22,18 @@ final patientControllerProvider =
 });
 
 class PatientController extends StateNotifier<PatientState> {
-  PatientController(this._bleService) : super(const PatientState.initial()) {
+  PatientController(this._bleService) : super(PatientState.initial()) {
     _bootstrap();
   }
 
   static const Duration _fusionWindow = Duration(milliseconds: 1200);
   static const Duration _eventCooldown = Duration(seconds: 3);
+  static const Duration _careRefreshInterval = Duration(minutes: 5);
 
   final BleService _bleService;
   StreamSubscription<SensorPacket>? _sensorSub;
   StreamSubscription<DeviceConnectionUpdate>? _connectionSub;
+  Timer? _careTimer;
   final Map<DeviceSlot, DateTime?> _lastRiskSignalAt = {
     DeviceSlot.device1: null,
     DeviceSlot.device2: null,
@@ -39,10 +41,76 @@ class PatientController extends StateNotifier<PatientState> {
   DateTime? _lastFusedEventAt;
 
   Future<void> _bootstrap() async {
+    _initializeCareSchedule();
+    _syncDailyChecklist();
+    _careTimer = Timer.periodic(_careRefreshInterval, (_) {
+      _syncDailyChecklist();
+    });
+
     _connectionSub =
         _bleService.connectionStream.listen(_handleConnectionUpdate);
     _sensorSub = _bleService.sensorStream.listen(_handleSensorPacket);
     await _bleService.start();
+  }
+
+  void _initializeCareSchedule() {
+    if (state.lastFlushAt != null &&
+        state.lastMedicationAt != null &&
+        state.lastDressingChangeAt != null) {
+      return;
+    }
+
+    final now = DateTime.now();
+    state = state.copyWith(
+      checklistDate: () => DateTime(now.year, now.month, now.day),
+      lastFlushAt: () => now.subtract(const Duration(hours: 20)),
+      lastMedicationAt: () => now.subtract(const Duration(hours: 10)),
+      lastDressingChangeAt: () => now.subtract(const Duration(days: 6)),
+    );
+  }
+
+  void _syncDailyChecklist() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_isSameDay(state.checklistDate, today)) {
+      return;
+    }
+
+    final hasPreviousChecklist =
+        state.checklistDate.millisecondsSinceEpoch != 0;
+
+    final nextFlushMissedCount =
+        hasPreviousChecklist && !state.flushingCompleted
+            ? state.flushMissedCount + 1
+            : state.flushMissedCount;
+    final nextMedicationMissedCount =
+        hasPreviousChecklist && !state.medicationTimingCompleted
+            ? state.medicationMissedCount + 1
+            : state.medicationMissedCount;
+    final nextDressingMissedCount =
+        hasPreviousChecklist && !state.dressingConditionChecked
+            ? state.dressingMissedCount + 1
+            : state.dressingMissedCount;
+
+    state = state.copyWith(
+      checklistDate: () => today,
+      symptomsChecked: false,
+      dressingConditionChecked: false,
+      flushingCompleted: false,
+      drynessChecked: false,
+      medicationTimingCompleted: false,
+      catheterLengthChecked: false,
+      movementPrecautionsChecked: false,
+      lineSecuredChecked: false,
+      dressingChangedToday: false,
+      flushMissedCount: nextFlushMissedCount,
+      medicationMissedCount: nextMedicationMissedCount,
+      dressingMissedCount: nextDressingMissedCount,
+    );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   void _handleConnectionUpdate(DeviceConnectionUpdate update) {
@@ -176,6 +244,77 @@ class PatientController extends StateNotifier<PatientState> {
     state = state.copyWith(patientName: name.trim());
   }
 
+  void setSymptomsChecked(bool value) {
+    state = state.copyWith(symptomsChecked: value);
+  }
+
+  void setFlushingCompleted(bool value) {
+    state = state.copyWith(
+      flushingCompleted: value,
+      lastFlushAt: value ? () => DateTime.now() : null,
+    );
+  }
+
+  void setDressingConditionChecked(bool value) {
+    state = state.copyWith(dressingConditionChecked: value);
+  }
+
+  void setDrynessChecked(bool value) {
+    state = state.copyWith(drynessChecked: value);
+  }
+
+  void setMedicationTimingCompleted(bool value) {
+    state = state.copyWith(
+      medicationTimingCompleted: value,
+      lastMedicationAt: value ? () => DateTime.now() : null,
+    );
+  }
+
+  void setDressingChangedToday(bool value) {
+    state = state.copyWith(
+      dressingChangedToday: value,
+      lastDressingChangeAt: value ? () => DateTime.now() : null,
+    );
+  }
+
+  void setAppointmentDate(DateTime? date) {
+    state = state.copyWith(
+      nextAppointmentDate: () => date,
+    );
+  }
+
+  void setAppointmentDetails({
+    required DateTime date,
+    String? location,
+  }) {
+    final cleanLocation = location?.trim();
+    state = state.copyWith(
+      nextAppointmentDate: () => date,
+      appointmentLocation: () =>
+          cleanLocation == null || cleanLocation.isEmpty ? null : cleanLocation,
+    );
+  }
+
+  void setLastDressingChangeDate(DateTime? date) {
+    state = state.copyWith(
+      lastDressingChangeAt: () => date,
+      dressingChangedToday:
+          _isSameDay(date ?? DateTime(1970, 1, 1), DateTime.now()),
+    );
+  }
+
+  void setCatheterLengthChecked(bool value) {
+    state = state.copyWith(catheterLengthChecked: value);
+  }
+
+  void setMovementPrecautionsChecked(bool value) {
+    state = state.copyWith(movementPrecautionsChecked: value);
+  }
+
+  void setLineSecuredChecked(bool value) {
+    state = state.copyWith(lineSecuredChecked: value);
+  }
+
   bool _thresholdRisk(SensorPacket packet) {
     final accMagnitude = sqrt(
       packet.accX * packet.accX +
@@ -261,6 +400,7 @@ class PatientController extends StateNotifier<PatientState> {
 
   @override
   void dispose() {
+    _careTimer?.cancel();
     _sensorSub?.cancel();
     _connectionSub?.cancel();
     super.dispose();
