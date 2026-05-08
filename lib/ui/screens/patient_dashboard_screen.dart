@@ -1,11 +1,19 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/patient_state.dart';
-import '../../models/sensor_packet.dart';
+import '../../services/backend_service.dart';
+import '../../state/backend_status_provider.dart';
 import '../../state/patient_controller.dart';
+import '../../state/risky_events_provider.dart';
+import '../widgets/device_status_tile.dart';
 import '../widgets/risk_events_time_chart.dart';
+import '../widgets/risk_level_badge.dart';
+import '../widgets/streaming_control_panel.dart';
 
 class PatientDashboardScreen extends ConsumerStatefulWidget {
   const PatientDashboardScreen({super.key});
@@ -28,19 +36,14 @@ class _PatientDashboardScreenState
   @override
   void initState() {
     super.initState();
+    _startPeriodicRefresh();
+  }
 
-    ref.listenManual<PatientState>(patientControllerProvider, (previous, next) {
-      final oldCount = previous?.dailyEventCount ?? 0;
-      if (next.dailyEventCount > oldCount) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF1A8D9D),
-            content: Text(
-              'Gentle care note at ${DateFormat('hh:mm:ss a').format(next.latestEventTimestamp!)}. Please move your PICC arm comfortably.',
-            ),
-          ),
-        );
+  void _startPeriodicRefresh() {
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        ref.invalidate(riskyEventsProvider);
+        _startPeriodicRefresh();
       }
     });
   }
@@ -53,18 +56,41 @@ class _PatientDashboardScreenState
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(patientControllerProvider);
+    ref.listen<PatientState>(patientStateWithEventsProvider, (previous, next) {
+      final oldCount = previous?.dailyEventCount ?? 0;
+      if (next.dailyEventCount > oldCount && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF1A8D9D),
+            content: Text(
+              'Gentle care note at ${DateFormat('hh:mm:ss a').format(next.latestEventTimestamp!)}. Please move your PICC arm comfortably.',
+            ),
+          ),
+        );
+      }
+    });
+
+    final state = ref.watch(patientStateWithEventsProvider);
+    final backendStatus = ref.watch(backendStatusProvider);
+    final latestTimestamp = state.latestEventTimestamp == null
+        ? 'No event yet'
+        : DateFormat('hh:mm:ss a').format(state.latestEventTimestamp!);
 
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: [
-        _topSummary(state),
+            children: [
+        _backendNoticeBanner(backendStatus),
+        const SizedBox(height: 12),
+        const StreamingControlPanel(),
+        const SizedBox(height: 14),
+        _topSummary(state, latestTimestamp),
         const SizedBox(height: 12),
         _careOverviewCard(state),
         const SizedBox(height: 12),
-        _ringMetrics(state),
+        _ringMetrics(state, backendStatus),
         const SizedBox(height: 14),
-        _sensorAndRiskSection(state),
+        _sensorAndRiskSection(state, backendStatus),
       ],
     );
   }
@@ -680,38 +706,67 @@ class _PatientDashboardScreenState
               final inCurrentMonth = date.month == _calendarMonth.month;
               final isToday = _isSameDay(DateTime.now(), date);
               final events = _eventsForDate(state, date);
+              final hasAppointment =
+                  _isSameDay(state.nextAppointmentDate, date);
 
               return InkWell(
                 borderRadius: BorderRadius.circular(6),
-                onTap: () => _showAddCalendarEventDialog(state, initialDate: date),
+                onTap: () =>
+                    _showAddCalendarEventDialog(state, initialDate: date),
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(2, 2, 2, 1),
                   decoration: BoxDecoration(
-                    color: Colors.transparent,
+                    color: hasAppointment
+                        ? const Color(0xFFF2EEFF)
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(6),
-                    border: isToday
-                        ? Border.all(color: const Color(0xFF5B3FD6), width: 1.1)
+                    border: isToday || hasAppointment
+                        ? Border.all(
+                            color: hasAppointment
+                                ? const Color(0xFF6D4AE2)
+                                : const Color(0xFF5B3FD6),
+                            width: hasAppointment ? 1.2 : 1.1,
+                          )
                         : null,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${date.day}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
-                          color: inCurrentMonth
-                              ? const Color(0xFF2B2F38)
-                              : const Color(0xFFBABFC8),
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            '${date.day}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: isToday || hasAppointment
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: hasAppointment
+                                  ? const Color(0xFF4A2FC8)
+                                  : inCurrentMonth
+                                      ? const Color(0xFF2B2F38)
+                                      : const Color(0xFFBABFC8),
+                            ),
+                          ),
+                          const Spacer(),
+                          if (hasAppointment)
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF6D4AE2),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 1),
                       for (final event in events.take(2))
                         Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 1),
-                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 2, vertical: 1),
                           decoration: BoxDecoration(
                             color: event.background,
                             borderRadius: BorderRadius.circular(3),
@@ -725,6 +780,15 @@ class _PatientDashboardScreenState
                               color: event.foreground,
                               fontWeight: FontWeight.w600,
                             ),
+                          ),
+                        ),
+                      if (events.length > 2)
+                        Text(
+                          '+${events.length - 2} more',
+                          style: const TextStyle(
+                            fontSize: 7,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF667085),
                           ),
                         ),
                     ],
@@ -743,7 +807,8 @@ class _PatientDashboardScreenState
 
     final appointment = state.nextAppointmentDate;
     if (_isSameDay(appointment, date)) {
-      final timeText = appointment == null ? '' : DateFormat('h:mm a').format(appointment);
+      final timeText =
+          appointment == null ? '' : DateFormat('h:mm a').format(appointment);
       events.add(
         _CalendarCellEvent(
           label: timeText.isEmpty ? 'Appt' : 'Appt $timeText',
@@ -751,7 +816,8 @@ class _PatientDashboardScreenState
           foreground: const Color(0xFF4A2FC8),
         ),
       );
-      if (state.appointmentLocation != null && state.appointmentLocation!.isNotEmpty) {
+      if (state.appointmentLocation != null &&
+          state.appointmentLocation!.isNotEmpty) {
         events.add(
           _CalendarCellEvent(
             label: state.appointmentLocation!,
@@ -796,7 +862,8 @@ class _PatientDashboardScreenState
   }) async {
     final formKey = GlobalKey<FormState>();
     DateTime pickedDate = initialDate ?? DateTime.now();
-    TimeOfDay pickedTime = TimeOfDay.fromDateTime(state.nextAppointmentDate ?? DateTime.now());
+    TimeOfDay pickedTime =
+        TimeOfDay.fromDateTime(state.nextAppointmentDate ?? DateTime.now());
     var eventType = 'appointment';
     final locationController = TextEditingController(
       text: state.appointmentLocation ?? '',
@@ -817,7 +884,8 @@ class _PatientDashboardScreenState
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: eventType,
-                      decoration: const InputDecoration(labelText: 'Event type'),
+                      decoration:
+                          const InputDecoration(labelText: 'Event type'),
                       items: const [
                         DropdownMenuItem(
                           value: 'appointment',
@@ -892,12 +960,13 @@ class _PatientDashboardScreenState
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (!(formKey.currentState?.validate() ?? true)) {
                       return;
                     }
 
-                    final controller = ref.read(patientControllerProvider.notifier);
+                    final controller =
+                        ref.read(patientControllerProvider.notifier);
                     if (eventType == 'appointment') {
                       final dateTime = DateTime(
                         pickedDate.year,
@@ -910,14 +979,23 @@ class _PatientDashboardScreenState
                         date: dateTime,
                         location: locationController.text,
                       );
+
+                      // Sync to Teams calendar
+                      await BackendService.syncAppointmentToTeams(
+                        title: 'Medical Appointment',
+                        startTime: dateTime,
+                        location: locationController.text,
+                      );
                     } else {
                       controller.setLastDressingChangeDate(
-                        DateTime(pickedDate.year, pickedDate.month, pickedDate.day),
+                        DateTime(
+                            pickedDate.year, pickedDate.month, pickedDate.day),
                       );
                     }
 
                     setState(() {
-                      _calendarMonth = DateTime(pickedDate.year, pickedDate.month);
+                      _calendarMonth =
+                          DateTime(pickedDate.year, pickedDate.month);
                     });
                     Navigator.of(context).pop();
                   },
@@ -1030,7 +1108,10 @@ class _PatientDashboardScreenState
     );
   }
 
-  Widget _sensorAndRiskSection(PatientState state) {
+  Widget _sensorAndRiskSection(
+    PatientState state,
+    BackendStatusState backendStatus,
+  ) {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 760) {
@@ -1040,7 +1121,7 @@ class _PatientDashboardScreenState
               const SizedBox(height: 12),
               _patientTodoCard(state),
               const SizedBox(height: 12),
-              _sensorImagePanel(state),
+              _sensorImagePanel(backendStatus),
               const SizedBox(height: 12),
               RiskEventsTimeChart(events: state.events, compact: true),
             ],
@@ -1069,12 +1150,13 @@ class _PatientDashboardScreenState
               children: [
                 Expanded(
                   flex: 5,
-                  child: _sensorImagePanel(state),
+                  child: _sensorImagePanel(backendStatus),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 5,
-                  child: RiskEventsTimeChart(events: state.events, compact: true),
+                  child:
+                      RiskEventsTimeChart(events: state.events, compact: true),
                 ),
               ],
             ),
@@ -1084,7 +1166,9 @@ class _PatientDashboardScreenState
     );
   }
 
-  Widget _sensorImagePanel(PatientState state) {
+  Widget _sensorImagePanel(BackendStatusState backendStatus) {
+    final connectedCount = backendStatus.connectedCount;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
       decoration: BoxDecoration(
@@ -1102,6 +1186,25 @@ class _PatientDashboardScreenState
               fontWeight: FontWeight.w800,
               letterSpacing: 0.2,
               color: Color(0xFF1D2738),
+            ),
+          ),
+          const SizedBox(height: 10),
+          DeviceStatusTile(
+            title: 'Upper Arm IMU',
+            connected: backendStatus.device1Connected,
+          ),
+          const SizedBox(height: 8),
+          DeviceStatusTile(
+            title: 'Wrist IMU',
+            connected: backendStatus.device2Connected,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Connected IMU devices: $connectedCount / 2',
+            style: const TextStyle(
+              color: Color(0xFF667085),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 8),
@@ -1140,31 +1243,27 @@ class _PatientDashboardScreenState
                       _sensorHotspot(
                         top: 0.30,
                         left: 0.24,
-                        color: state.device1Connected
+                        color: backendStatus.device1Connected
                             ? const Color(0xFF20B26C)
                             : const Color(0xFFE5484D),
                         label: '1',
                         onTap: () => _showSensorSheet(
-                          slot: DeviceSlot.device1,
                           title: 'Upper Arm Sensor',
-                          connected: state.device1Connected,
-                          batteryLevel: state.device1BatteryLevel,
-                          connecting: state.device1Connecting,
+                          connected: backendStatus.device1Connected,
+                          batteryLevel: null,
                         ),
                       ),
                       _sensorHotspot(
                         top: 0.80,
                         left: 0.18,
-                        color: state.device2Connected
+                        color: backendStatus.device2Connected
                             ? const Color(0xFF20B26C)
                             : const Color(0xFFE5484D),
                         label: '2',
                         onTap: () => _showSensorSheet(
-                          slot: DeviceSlot.device2,
                           title: 'Wrist Sensor',
-                          connected: state.device2Connected,
-                          batteryLevel: state.device2BatteryLevel,
-                          connecting: state.device2Connecting,
+                          connected: backendStatus.device2Connected,
+                          batteryLevel: null,
                         ),
                       ),
                     ],
@@ -1231,11 +1330,9 @@ class _PatientDashboardScreenState
   }
 
   Future<void> _showSensorSheet({
-    required DeviceSlot slot,
     required String title,
     required bool connected,
     required int? batteryLevel,
-    required bool connecting,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -1276,28 +1373,16 @@ class _PatientDashboardScreenState
                       style: TextStyle(color: Color(0xFF667085))),
                   const SizedBox(width: 8),
                   Text(
-                    connected ? '${batteryLevel ?? '--'}%' : '--',
+                    batteryLevel != null ? '$batteryLevel%' : 'Not exposed',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              if (!connected)
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: connecting
-                        ? null
-                        : () {
-                            ref
-                                .read(patientControllerProvider.notifier)
-                                .connectSensor(slot);
-                            Navigator.of(context).pop();
-                          },
-                    child:
-                        Text(connecting ? 'Connecting...' : 'Connect Sensor'),
-                  ),
-                ),
+              const Text(
+                'Connection status is managed by the backend.',
+                style: TextStyle(color: Color(0xFF667085)),
+              ),
             ],
           ),
         );
@@ -1305,7 +1390,7 @@ class _PatientDashboardScreenState
     );
   }
 
-  Widget _topSummary(PatientState state) {
+  Widget _topSummary(PatientState state, [String? latestTimestamp]) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1328,7 +1413,7 @@ class _PatientDashboardScreenState
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'PICC Arm Status: Stable',
             style: TextStyle(
               color: Colors.white,
@@ -1336,6 +1421,9 @@ class _PatientDashboardScreenState
               fontSize: 23,
             ),
           ),
+          const SizedBox(height: 8),
+          if (latestTimestamp != null)
+            _metric('Latest Event', latestTimestamp),
           const SizedBox(height: 8),
           const Text(
             'Your monitoring is active and your care routine is on track today.',
@@ -1364,9 +1452,92 @@ class _PatientDashboardScreenState
     );
   }
 
-  Widget _ringMetrics(PatientState state) {
-    final connectedCount =
-        (state.device1Connected ? 1 : 0) + (state.device2Connected ? 1 : 0);
+  Widget _metric(String title, String value) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6, bottom: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          const SizedBox(height: 6),
+          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _backendNoticeBanner(BackendStatusState backendStatus) {
+    final isWeb = kIsWeb;
+    final backendReady = backendStatus.backendReady;
+    final backgroundColor =
+        backendReady ? const Color(0xFFEAF7F1) : const Color(0xFFFFF4E5);
+    final borderColor =
+        backendReady ? const Color(0xFFB7E4C7) : const Color(0xFFF2C66D);
+    final accentColor =
+        backendReady ? const Color(0xFF0F7B6C) : const Color(0xFFB76E00);
+
+    final message = backendReady
+        ? isWeb
+            ? 'Chrome is connected to the Flask backend. Press Start to run BLE streaming on the backend host.'
+            : 'Backend is online. Press Start to run BLE streaming on the backend host.'
+        : 'Backend is offline. Start the Python server first, then use Start to connect the IMU sensors.';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            backendReady ? Icons.link_rounded : Icons.cloud_off_rounded,
+            color: accentColor,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: accentColor,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+                if (backendStatus.errorMessage != null &&
+                    backendStatus.errorMessage!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    backendStatus.errorMessage!,
+                    style: TextStyle(
+                      color: accentColor.withValues(alpha: 0.9),
+                      fontSize: 12.5,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ringMetrics(PatientState state, BackendStatusState backendStatus) {
+    final connectedCount = backendStatus.connectedCount;
     final riskScore = switch (state.riskLevel) {
       RiskLevel.low => 1,
       RiskLevel.medium => 2,
