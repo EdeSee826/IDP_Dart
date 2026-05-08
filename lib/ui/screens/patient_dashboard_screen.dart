@@ -12,7 +12,6 @@ import '../../state/patient_controller.dart';
 import '../../state/risky_events_provider.dart';
 import '../widgets/device_status_tile.dart';
 import '../widgets/risk_events_time_chart.dart';
-import '../widgets/risk_level_badge.dart';
 import '../widgets/streaming_control_panel.dart';
 
 class PatientDashboardScreen extends ConsumerStatefulWidget {
