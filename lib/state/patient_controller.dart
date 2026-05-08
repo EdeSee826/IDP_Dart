@@ -237,6 +237,17 @@ class PatientController extends StateNotifier<PatientState> {
     }
   }
 
+  void setMockSensorsConnected() {
+    state = state.copyWith(
+      device1Connected: true,
+      device2Connected: true,
+      device1Connecting: false,
+      device2Connecting: false,
+      device1BatteryLevel: () => state.device1BatteryLevel ?? _initialBattery(),
+      device2BatteryLevel: () => state.device2BatteryLevel ?? _initialBattery(),
+    );
+  }
+
   void setPatientName(String name) {
     if (name.trim().isEmpty) {
       return;
