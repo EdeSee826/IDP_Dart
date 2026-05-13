@@ -15,15 +15,46 @@ final patientControllerProvider =
 
 /// Derived provider that automatically updates patient state when risky events change
 final patientStateWithEventsProvider = Provider<PatientState>((ref) {
-  final controller = ref.watch(patientControllerProvider.notifier);
+  final state = ref.watch(patientControllerProvider);
   final eventsAsync = ref.watch(riskyEventsProvider);
 
-  // Update controller when events change
-  eventsAsync.whenData((events) {
-    controller.updateFromBackendEvents(events);
-  });
+  // If events loaded, compute risk level based on events
+  return eventsAsync.when(
+    data: (events) {
+      if (events.isEmpty) {
+        return state.copyWith(
+          dailyEventCount: 0,
+          latestEventTimestamp: () => null,
+          riskLevel: RiskLevel.low,
+        );
+      }
 
-  return ref.watch(patientControllerProvider);
+      // Sort by timestamp descending to get latest first
+      final sortedEvents = [...events]
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      final latestEvent = sortedEvents.first;
+
+      // Calculate risk level based on total risky events
+      final RiskLevel newRiskLevel;
+      final totalEvents = events.length;
+      if (totalEvents > 50) {
+        newRiskLevel = RiskLevel.high;
+      } else if (totalEvents > 20) {
+        newRiskLevel = RiskLevel.medium;
+      } else {
+        newRiskLevel = RiskLevel.low;
+      }
+
+      return state.copyWith(
+        dailyEventCount: events.length,
+        latestEventTimestamp: () => latestEvent.timestamp,
+        riskLevel: newRiskLevel,
+        events: events,
+      );
+    },
+    loading: () => state,
+    error: (_, __) => state,
+  );
 });
 
 class PatientController extends StateNotifier<PatientState> {
@@ -138,6 +169,17 @@ class PatientController extends StateNotifier<PatientState> {
   }
 
   /// Patient care checklist management
+
+  /// Temporarily mark both sensors as connected (used by onboarding mock flow).
+  /// This does not touch any BLE layer and is safe when backend manages device state.
+  void setMockSensorsConnected() {
+    state = state.copyWith(
+      device1Connected: true,
+      device2Connected: true,
+      device1BatteryLevel: () => state.device1BatteryLevel ?? 80,
+      device2BatteryLevel: () => state.device2BatteryLevel ?? 80,
+    );
+  }
   void setPatientName(String name) {
     if (name.trim().isEmpty) {
       return;

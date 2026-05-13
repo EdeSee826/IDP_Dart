@@ -25,7 +25,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F6FB),
       appBar: AppBar(
-        title: const Text('Patient Monitoring Dashboard'),
+        title: const Text('PICC Care Companion'),
         actions: [
           IconButton(
             tooltip: 'Logout',

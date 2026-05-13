@@ -17,6 +17,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _submitting = false;
+  bool _isRegisterMode = false;
 
   @override
   void dispose() {
@@ -54,17 +55,70 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        'Login',
-                        style: TextStyle(
+                      Text(
+                        _isRegisterMode ? 'Create Account' : 'Sign In',
+                        style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Log in once to continue to your patient dashboard.',
-                        style: TextStyle(color: Color(0xFF667085)),
+                      Text(
+                        _isRegisterMode
+                            ? 'Create a new account to get started with PICC monitoring.'
+                            : 'Log in to continue to your patient dashboard.',
+                        style: const TextStyle(color: Color(0xFF667085)),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F6FB),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: _submitting
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _isRegisterMode = false;
+                                        });
+                                      },
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _isRegisterMode
+                                      ? Colors.transparent
+                                      : null,
+                                  foregroundColor: _isRegisterMode
+                                      ? const Color(0xFF667085)
+                                      : null,
+                                ),
+                                child: const Text('Sign In'),
+                              ),
+                            ),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: _submitting
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _isRegisterMode = true;
+                                        });
+                                      },
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _isRegisterMode
+                                      ? null
+                                      : Colors.transparent,
+                                  foregroundColor: _isRegisterMode
+                                      ? null
+                                      : const Color(0xFF667085),
+                                ),
+                                child: const Text('Create Account'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
                       TextFormField(
                         controller: _nameController,
                         decoration: const InputDecoration(
@@ -122,20 +176,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 setState(() {
                                   _submitting = true;
                                 });
-                                await ref
-                                    .read(sessionControllerProvider.notifier)
-                                    .login(
-                                      name: _nameController.text,
-                                      email: _emailController.text,
-                                      password: _passwordController.text,
-                                    );
+                                if (_isRegisterMode) {
+                                  await ref
+                                      .read(sessionControllerProvider.notifier)
+                                      .register(
+                                        name: _nameController.text,
+                                        email: _emailController.text,
+                                        password: _passwordController.text,
+                                      );
+                                } else {
+                                  await ref
+                                      .read(sessionControllerProvider.notifier)
+                                      .login(
+                                        name: _nameController.text,
+                                        email: _emailController.text,
+                                        password: _passwordController.text,
+                                      );
+                                }
                                 if (mounted) {
                                   setState(() {
                                     _submitting = false;
                                   });
                                 }
                               },
-                        child: Text(_submitting ? 'Signing in...' : 'Sign In'),
+                        child: Text(_submitting
+                            ? (_isRegisterMode ? 'Creating...' : 'Signing in...')
+                            : (_isRegisterMode ? 'Create Account' : 'Sign In')),
                       ),
                     ],
                   ),

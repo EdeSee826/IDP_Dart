@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -10,10 +9,8 @@ import '../../services/backend_service.dart';
 import '../../state/backend_status_provider.dart';
 import '../../state/patient_controller.dart';
 import '../../state/risky_events_provider.dart';
-import '../widgets/device_status_tile.dart';
+import '../widgets/sensor_connection_panel.dart';
 import '../widgets/risk_events_time_chart.dart';
-import '../widgets/risk_level_badge.dart';
-import '../widgets/streaming_control_panel.dart';
 
 class PatientDashboardScreen extends ConsumerStatefulWidget {
   const PatientDashboardScreen({super.key});
@@ -28,6 +25,7 @@ class _PatientDashboardScreenState
   static const Duration _flushInterval = Duration(days: 1);
   static const Duration _medicationInterval = Duration(hours: 12);
   static const Duration _dressingInterval = Duration(days: 7);
+  final ScrollController _checklistScrollController = ScrollController();
 
   String? _movingTaskTitle;
   DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month);
@@ -48,6 +46,12 @@ class _PatientDashboardScreenState
   }
 
   @override
+  void dispose() {
+    _checklistScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     ref.listen<PatientState>(patientStateWithEventsProvider, (previous, next) {
       final oldCount = previous?.dailyEventCount ?? 0;
@@ -55,9 +59,9 @@ class _PatientDashboardScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFD14343),
+            backgroundColor: const Color(0xFF1A8D9D),
             content: Text(
-              'Risk event detected at ${DateFormat('hh:mm:ss a').format(next.latestEventTimestamp!)}',
+              'Gentle care note at ${DateFormat('hh:mm:ss a').format(next.latestEventTimestamp!)}. Please move your PICC arm comfortably.',
             ),
           ),
         );
@@ -75,15 +79,155 @@ class _PatientDashboardScreenState
       children: [
         _backendNoticeBanner(backendStatus),
         const SizedBox(height: 12),
-        const StreamingControlPanel(),
-        const SizedBox(height: 14),
         _topSummary(state, latestTimestamp),
+        const SizedBox(height: 12),
+        _careOverviewCard(state),
         const SizedBox(height: 12),
         _ringMetrics(state, backendStatus),
         const SizedBox(height: 14),
         _sensorAndRiskSection(state, backendStatus),
       ],
     );
+  }
+
+  Widget _careOverviewCard(PatientState state) {
+    final dressingReminder = _dressingReminderText(state);
+    final completedCount = _completedChecklistItems(state);
+    final progress = completedCount / _totalChecklistItems;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2EBF3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Today\'s Care Overview',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1D2738),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _overviewLine(
+            label: 'Sensor 1: Upper Arm Sensor',
+            value: state.device1Connected ? 'Connected' : 'Not connected',
+            good: state.device1Connected,
+          ),
+          const SizedBox(height: 6),
+          _overviewLine(
+            label: 'Sensor 2: Wrist Sensor',
+            value: state.device2Connected ? 'Connected' : 'Not connected',
+            good: state.device2Connected,
+          ),
+          const SizedBox(height: 6),
+          _overviewLine(
+            label: 'Today\'s movement count',
+            value: '${state.dailyEventCount}',
+            good: true,
+          ),
+          const SizedBox(height: 6),
+          _overviewLine(
+            label: 'Dressing reminder',
+            value: dressingReminder,
+            good: true,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Daily care checklist: $completedCount / $_totalChecklistItems complete',
+            style: const TextStyle(
+              color: Color(0xFF334155),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 7,
+              value: progress,
+              backgroundColor: const Color(0xFFD7E5F0),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2D8E90)),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF8FF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFD6E9F8)),
+            ),
+            child: const Text(
+              'You are doing well. Keep your PICC arm comfortable and continue your daily care routine.',
+              style: TextStyle(
+                color: Color(0xFF234A63),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _overviewLine({
+    required String label,
+    required String value,
+    required bool good,
+  }) {
+    return Row(
+      children: [
+        Text(
+          '$label:',
+          style: const TextStyle(
+            color: Color(0xFF475467),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: TextStyle(
+            color: good ? const Color(0xFF13795B) : const Color(0xFF8A9099),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _dressingReminderText(PatientState state) {
+    final lastChange = state.lastDressingChangeAt;
+    if (lastChange == null) {
+      return 'Please schedule your first dressing check';
+    }
+
+    final dueDate = DateTime(
+      lastChange.year,
+      lastChange.month,
+      lastChange.day,
+    ).add(_dressingInterval);
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final daysLeft = dueDate.difference(todayDate).inDays;
+
+    if (daysLeft > 1) {
+      return 'Next change in $daysLeft days';
+    }
+    if (daysLeft == 1) {
+      return 'Next change tomorrow';
+    }
+    if (daysLeft == 0) {
+      return 'Dressing check due today';
+    }
+    return 'Please update dressing care today';
   }
 
   Widget _patientTodoCard(PatientState state) {
@@ -176,8 +320,10 @@ class _PatientDashboardScreenState
           SizedBox(
             height: 360,
             child: Scrollbar(
+              controller: _checklistScrollController,
               thumbVisibility: true,
               child: SingleChildScrollView(
+                controller: _checklistScrollController,
                 child: Column(
                   children: [
                     if (missedAlerts.isNotEmpty) ...[
@@ -555,8 +701,7 @@ class _PatientDashboardScreenState
               final inCurrentMonth = date.month == _calendarMonth.month;
               final isToday = _isSameDay(DateTime.now(), date);
               final events = _eventsForDate(state, date);
-              final hasAppointment =
-                  _isSameDay(state.nextAppointmentDate, date);
+              final hasAppointment = _isSameDay(state.nextAppointmentDate, date);
 
               return InkWell(
                 borderRadius: BorderRadius.circular(6),
@@ -721,6 +866,7 @@ class _PatientDashboardScreenState
     await showDialog<void>(
       context: context,
       builder: (context) {
+        final navigator = Navigator.of(context);
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -805,7 +951,7 @@ class _PatientDashboardScreenState
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: navigator.pop,
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
@@ -846,7 +992,7 @@ class _PatientDashboardScreenState
                       _calendarMonth =
                           DateTime(pickedDate.year, pickedDate.month);
                     });
-                    Navigator.of(context).pop();
+                    navigator.pop();
                   },
                   child: const Text('Save'),
                 ),
@@ -970,7 +1116,7 @@ class _PatientDashboardScreenState
               const SizedBox(height: 12),
               _patientTodoCard(state),
               const SizedBox(height: 12),
-              _sensorImagePanel(backendStatus),
+              _sensorImagePanel(state, backendStatus),
               const SizedBox(height: 12),
               RiskEventsTimeChart(events: state.events, compact: true),
             ],
@@ -999,7 +1145,7 @@ class _PatientDashboardScreenState
               children: [
                 Expanded(
                   flex: 5,
-                  child: _sensorImagePanel(backendStatus),
+                  child: _sensorImagePanel(state, backendStatus),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1015,166 +1161,20 @@ class _PatientDashboardScreenState
     );
   }
 
-  Widget _sensorImagePanel(BackendStatusState backendStatus) {
-    final connectedCount = backendStatus.connectedCount;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE7ECF4)),
+  Widget _sensorImagePanel(PatientState state, BackendStatusState backendStatus) {
+    return SensorConnectionPanel(
+      onSensorTap1: () => _showSensorSheet(
+        title: 'Sensor 1: Upper Arm Sensor',
+        connected: backendStatus.device1Connected,
+        batteryLevel: state.device1BatteryLevel,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Wearable Sensors',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.2,
-              color: Color(0xFF1D2738),
-            ),
-          ),
-          const SizedBox(height: 10),
-          DeviceStatusTile(
-            title: 'Upper Arm IMU',
-            connected: backendStatus.device1Connected,
-          ),
-          const SizedBox(height: 8),
-          DeviceStatusTile(
-            title: 'Wrist IMU',
-            connected: backendStatus.device2Connected,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Connected IMU devices: $connectedCount / 2',
-            style: const TextStyle(
-              color: Color(0xFF667085),
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: FractionallySizedBox(
-              widthFactor: 0.40,
-              child: AspectRatio(
-                aspectRatio: 3 / 4,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.asset(
-                        'image_1.png',
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [Color(0xFFEEF2F7), Color(0xFFDDE4EE)],
-                              ),
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.accessibility_new_rounded,
-                                size: 74,
-                                color: Color(0xFF7A8698),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      _sensorHotspot(
-                        top: 0.30,
-                        left: 0.24,
-                        color: backendStatus.device1Connected
-                            ? const Color(0xFF20B26C)
-                            : const Color(0xFFE5484D),
-                        label: '1',
-                        onTap: () => _showSensorSheet(
-                          title: 'Upper Arm Sensor',
-                          connected: backendStatus.device1Connected,
-                          batteryLevel: null,
-                        ),
-                      ),
-                      _sensorHotspot(
-                        top: 0.80,
-                        left: 0.18,
-                        color: backendStatus.device2Connected
-                            ? const Color(0xFF20B26C)
-                            : const Color(0xFFE5484D),
-                        label: '2',
-                        onTap: () => _showSensorSheet(
-                          title: 'Wrist Sensor',
-                          connected: backendStatus.device2Connected,
-                          batteryLevel: null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Tap sensor marker to view connection and battery details.',
-            style: TextStyle(
-              color: Color(0xFF667085),
-              fontSize: 13,
-              letterSpacing: 0.15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+      onSensorTap2: () => _showSensorSheet(
+        title: 'Sensor 2: Wrist Sensor',
+        connected: backendStatus.device2Connected,
+        batteryLevel: state.device2BatteryLevel,
       ),
-    );
-  }
-
-  Widget _sensorHotspot({
-    required double top,
-    required double left,
-    required Color color,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Align(
-      alignment: Alignment(left * 2 - 1, top * 2 - 1),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3.5),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x4D000000),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 20,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ),
-        ),
-      ),
+      showContinueButton: false,
+      showImage: true,
     );
   }
 
@@ -1239,7 +1239,7 @@ class _PatientDashboardScreenState
     );
   }
 
-  Widget _topSummary(PatientState state, String latestTimestamp) {
+  Widget _topSummary(PatientState state, [String? latestTimestamp]) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1247,7 +1247,7 @@ class _PatientDashboardScreenState
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF0F5BA8), Color(0xFF1A8D9D)],
+          colors: [Color(0xFF2A7FB7), Color(0xFF2D8E90)],
         ),
       ),
       child: Column(
@@ -1258,45 +1258,80 @@ class _PatientDashboardScreenState
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
-              fontSize: 17,
+              fontSize: 16,
             ),
           ),
           const SizedBox(height: 10),
-          _metric('Latest Event', latestTimestamp),
+          const Text(
+            'PICC Arm Status: Stable',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: 23,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (latestTimestamp != null)
+            _metric('Latest Event', latestTimestamp),
+          const SizedBox(height: 8),
+          const Text(
+            'Your monitoring is active and your care routine is on track today.',
+            style: TextStyle(
+              color: Color(0xFFEAF7FF),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              const Text(
-                'Risk Level',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              'Friendly tip: keep your PICC arm movements smooth and relaxed.',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(width: 10),
-              RiskLevelBadge(level: state.riskLevel),
-            ],
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _metric(String title, String value) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6, bottom: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          const SizedBox(height: 6),
+          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
   Widget _backendNoticeBanner(BackendStatusState backendStatus) {
-    final isWeb = kIsWeb;
     final backendReady = backendStatus.backendReady;
     final backgroundColor =
-        backendReady ? const Color(0xFFEAF7F1) : const Color(0xFFFFF4E5);
+      backendReady ? const Color(0xFFEAF7F1) : const Color(0xFFF6F8FB);
     final borderColor =
-        backendReady ? const Color(0xFFB7E4C7) : const Color(0xFFF2C66D);
+      backendReady ? const Color(0xFFB7E4C7) : const Color(0xFFD7E2EA);
     final accentColor =
-        backendReady ? const Color(0xFF0F7B6C) : const Color(0xFFB76E00);
+      backendReady ? const Color(0xFF0F7B6C) : const Color(0xFF5F6C7B);
 
     final message = backendReady
-        ? isWeb
-            ? 'Chrome is connected to the Flask backend. Press Start to run BLE streaming on the backend host.'
-            : 'Backend is online. Press Start to run BLE streaming on the backend host.'
-        : 'Backend is offline. Start the Python server first, then use Start to connect the IMU sensors.';
+      ? 'Monitoring services are ready. Use the Wearable Sensors panel to connect or pause monitoring.'
+      : 'Monitoring services are not ready yet. The app will reconnect when the backend is available.';
 
     return Container(
       width: double.infinity,
@@ -1368,7 +1403,7 @@ class _PatientDashboardScreenState
             child: _ringMetricItem(
               valueText: '${state.dailyEventCount}',
               unitText: 'events',
-              label: 'Risky Events',
+              label: 'Today\'s Movement Count',
               progress: (state.dailyEventCount / 10).clamp(0.0, 1.0),
               color: const Color(0xFFE9818C),
             ),
@@ -1377,7 +1412,7 @@ class _PatientDashboardScreenState
             child: _ringMetricItem(
               valueText: '$connectedCount',
               unitText: '/2',
-              label: 'Connected',
+              label: 'Sensors Connected',
               progress: connectedCount / 2,
               color: const Color(0xFF8CCF2F),
             ),
@@ -1386,39 +1421,9 @@ class _PatientDashboardScreenState
             child: _ringMetricItem(
               valueText: '$riskScore',
               unitText: '/3',
-              label: 'Risk Level',
+              label: 'Care Attention Level',
               progress: riskScore / 3,
               color: const Color(0xFFC7B3F2),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _metric(String title, String value) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 18,
             ),
           ),
         ],

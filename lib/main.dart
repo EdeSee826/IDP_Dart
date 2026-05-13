@@ -14,7 +14,7 @@ class PatientMonitoringApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Patient Monitor',
+      title: 'PICC Care Companion',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0F5BA8)),
         useMaterial3: true,

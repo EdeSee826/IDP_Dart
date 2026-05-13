@@ -5,6 +5,7 @@ import '../../models/session_state.dart';
 import '../../state/session_controller.dart';
 import 'home_shell.dart';
 import 'login_screen.dart';
+import 'onboarding_flow_screen.dart';
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -18,7 +19,9 @@ class AuthGate extends ConsumerWidget {
           body: Center(child: CircularProgressIndicator()),
         ),
       SessionStatus.unauthenticated => const LoginScreen(),
-      SessionStatus.authenticated => const HomeShell(),
+      SessionStatus.authenticated => session.onboardingCompleted
+          ? const HomeShell()
+          : const OnboardingFlowScreen(),
     };
   }
 }

@@ -12,10 +12,12 @@
 cd backend
 ```
 
-2. Install dependencies:
+2. Install backend dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-flask.txt
 ```
+
+If you already have the generated environment, you can also reuse the existing `requirements.txt` file. The smaller `requirements-flask.txt` file is the safer setup path for a clean install.
 
 3. Add your ML model files to this directory:
    - `svm_rfe_model (1).pkl`
@@ -24,10 +26,12 @@ pip install -r requirements.txt
 ## Running the Backend
 
 ```bash
-python app.py
+python run.py
 ```
 
 The Flask server will start on `http://localhost:5000`
+
+You can also run the app directly with `python app.py`, but `run.py` keeps the Flask bootstrap path explicit.
 
 ## API Endpoints
 
