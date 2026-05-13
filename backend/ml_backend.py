@@ -12,7 +12,7 @@ import time
 import warnings
 import sys
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ============================================================
 # NUMPY COMPATIBILITY PATCHES (BEFORE IMPORTING NUMPY)
@@ -84,9 +84,12 @@ STABILIZATION_SAMPLES = int(EXPECTED_FREQ * STABILIZATION_SEC)
 
 RISKY_ACTIVITIES = {"elbow_flexion", "shoulder_adduction"}
 RISKY_CONFIRM_WINDOWS = 6  # 6 consecutive risky windows before alarm (~4.5 seconds)
+RISKY_BEEP_REPEAT_WINDOWS = 3  # beep again every 3 risky windows after the first trigger
+RISKY_EVENT_REPEAT_WINDOWS = 6  # log one risky event for every 6 risky windows
 
 MODEL_PATH = "svm_rfe_model (1).pkl"
 SCALER_PATH = "scaler (1).pkl"
+RETENTION_DAYS = 7
 
 
 def resolve_model_file(filename):
@@ -233,6 +236,9 @@ def log_risky_event_to_db(event_type):
             INSERT INTO risky_events (event_type, timestamp, risk_level)
             VALUES (?, ?, ?)
         """, (event_type, timestamp, "Risky"))
+
+        cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("DELETE FROM risky_events WHERE timestamp < ?", (cutoff,))
         
         conn.commit()
         conn.close()
@@ -379,17 +385,26 @@ def run_prediction_if_ready():
     else:
         risky_counter = 0
 
-    # Only log RISKY events (not every prediction)
+    # Fire the first alarm at 6 risky windows, then repeat beeps every 3 windows.
     if risky_counter >= RISKY_CONFIRM_WINDOWS:
-        play_alert_sound()
-        log_risky_event_to_db(prediction)
-        
-        # Print risky event with real-world timestamp
-        real_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[RISKY EVENT] {real_time} - Activity: {prediction} [ALARM TRIGGERED]")
-        
-        # Reset counter after logging
-        risky_counter = 0
+        should_beep = (
+            risky_counter == RISKY_CONFIRM_WINDOWS
+            or (risky_counter - RISKY_CONFIRM_WINDOWS) % RISKY_BEEP_REPEAT_WINDOWS == 0
+        )
+        should_log_event = (
+            risky_counter == RISKY_CONFIRM_WINDOWS
+            or (risky_counter - RISKY_CONFIRM_WINDOWS) % RISKY_EVENT_REPEAT_WINDOWS == 0
+        )
+
+        if should_beep:
+            play_alert_sound()
+
+        if should_log_event:
+            log_risky_event_to_db(prediction)
+
+            # Print risky event with real-world timestamp
+            real_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[RISKY EVENT] {real_time} - Activity: {prediction} [ALARM TRIGGERED]")
 
 
 

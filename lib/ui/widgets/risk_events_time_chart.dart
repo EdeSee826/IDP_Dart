@@ -16,8 +16,7 @@ class RiskEventsTimeChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ordered = List<RiskEvent>.from(events)
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final dailyBars = _buildDailyBars(events);
 
     return Container(
       padding: EdgeInsets.all(compact ? 10 : 14),
@@ -30,7 +29,7 @@ class RiskEventsTimeChart extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Risky Events vs Time',
+            'Risky Events - Last 7 Days',
             style: TextStyle(
               fontWeight: FontWeight.w700,
               color: Color(0xFF1A1F2D),
@@ -40,31 +39,43 @@ class RiskEventsTimeChart extends StatelessWidget {
           SizedBox(height: compact ? 8 : 12),
           SizedBox(
             height: compact ? 150 : 210,
-            child: ordered.isEmpty
+            child: dailyBars.isEmpty
                 ? const Center(child: Text('No events yet.'))
-                : LineChart(
-                    _buildData(ordered, compact),
+                : BarChart(
+                    _buildData(dailyBars, compact),
                   ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 14,
+            runSpacing: 8,
+            children: [
+              _ChartLegend(
+                  color: const Color(0xFF2563EB), label: 'Elbow flexion'),
+              _ChartLegend(
+                color: const Color(0xFFF97316),
+                label: 'Shoulder adduction',
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  LineChartData _buildData(List<RiskEvent> ordered, bool compact) {
-    final spots = <FlSpot>[];
-    for (var i = 0; i < ordered.length; i++) {
-      spots.add(FlSpot(i.toDouble(), (i + 1).toDouble()));
-    }
+  BarChartData _buildData(List<_DailyBarData> dailyBars, bool compact) {
+    final maxY = dailyBars
+        .map((bar) => bar.elbowFlexionCount > bar.shoulderAdductionCount
+            ? bar.elbowFlexionCount
+            : bar.shoulderAdductionCount)
+        .fold<int>(
+            0, (previous, current) => current > previous ? current : previous)
+        .toDouble();
 
-    final maxX = (ordered.length - 1).toDouble();
-    final maxY = ordered.length.toDouble();
-
-    return LineChartData(
-      minX: 0,
-      maxX: maxX,
-      minY: 0,
+    return BarChartData(
       maxY: maxY < 3 ? 3 : maxY + 1,
+      alignment: BarChartAlignment.spaceAround,
+      barTouchData: BarTouchData(enabled: false),
       gridData: FlGridData(
         show: true,
         horizontalInterval: 1,
@@ -97,17 +108,17 @@ class RiskEventsTimeChart extends StatelessWidget {
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            reservedSize: compact ? 24 : 30,
-            interval: maxX > 3 ? (maxX / 2).ceilToDouble() : 1,
+            reservedSize: compact ? 28 : 36,
             getTitlesWidget: (value, meta) {
               final index = value.toInt();
-              if (index < 0 || index >= ordered.length) {
+              if (index < 0 || index >= dailyBars.length) {
                 return const SizedBox.shrink();
               }
+
               return Padding(
                 padding: EdgeInsets.only(top: compact ? 2 : 6),
                 child: Text(
-                  DateFormat('HH:mm').format(ordered[index].timestamp),
+                  DateFormat('MMM d').format(dailyBars[index].date),
                   style: TextStyle(
                     fontSize: compact ? 8 : 10,
                     color: const Color(0xFF667085),
@@ -118,16 +129,105 @@ class RiskEventsTimeChart extends StatelessWidget {
           ),
         ),
       ),
-      lineBarsData: [
-        LineChartBarData(
-          spots: spots,
-          isCurved: true,
-          barWidth: compact ? 2.4 : 3,
-          color: const Color(0xFFD14343),
-          dotData: FlDotData(show: !compact),
-          belowBarData: BarAreaData(
-            show: true,
-            color: const Color(0xFFD14343).withValues(alpha: 0.15),
+      barGroups: [
+        for (final bar in dailyBars)
+          BarChartGroupData(
+            x: bar.index,
+            barsSpace: 4,
+            barRods: [
+              BarChartRodData(
+                toY: bar.elbowFlexionCount.toDouble(),
+                width: compact ? 8 : 12,
+                borderRadius: BorderRadius.circular(4),
+                color: const Color(0xFF2563EB),
+              ),
+              BarChartRodData(
+                toY: bar.shoulderAdductionCount.toDouble(),
+                width: compact ? 8 : 12,
+                borderRadius: BorderRadius.circular(4),
+                color: const Color(0xFFF97316),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  List<_DailyBarData> _buildDailyBars(List<RiskEvent> events) {
+    final today = DateTime.now();
+    final startDay = DateTime(today.year, today.month, today.day)
+        .subtract(const Duration(days: 6));
+    final groupedEvents = <String, List<RiskEvent>>{};
+
+    for (final event in events) {
+      final eventDay = DateTime(
+          event.timestamp.year, event.timestamp.month, event.timestamp.day);
+      if (eventDay.isBefore(startDay)) {
+        continue;
+      }
+
+      final dayKey = DateFormat('yyyy-MM-dd').format(eventDay);
+      groupedEvents.putIfAbsent(dayKey, () => <RiskEvent>[]).add(event);
+    }
+
+    return List.generate(7, (index) {
+      final day = startDay.add(Duration(days: index));
+      final dayKey = DateFormat('yyyy-MM-dd').format(day);
+      final dayEvents = groupedEvents[dayKey] ?? const <RiskEvent>[];
+      return _DailyBarData(
+        index: index,
+        date: day,
+        elbowFlexionCount: dayEvents
+            .where((event) => event.eventType == 'elbow_flexion')
+            .length,
+        shoulderAdductionCount: dayEvents
+            .where((event) => event.eventType == 'shoulder_adduction')
+            .length,
+      );
+    });
+  }
+}
+
+class _DailyBarData {
+  const _DailyBarData({
+    required this.index,
+    required this.date,
+    required this.elbowFlexionCount,
+    required this.shoulderAdductionCount,
+  });
+
+  final int index;
+  final DateTime date;
+  final int elbowFlexionCount;
+  final int shoulderAdductionCount;
+}
+
+class _ChartLegend extends StatelessWidget {
+  const _ChartLegend({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF667085),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],

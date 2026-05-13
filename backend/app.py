@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import signal
 import importlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -19,6 +19,7 @@ CORS(app)
 
 # Database configuration
 DB_PATH = "risky_events.db"
+RETENTION_DAYS = 7
 
 # Background thread management
 ml_thread = None
@@ -61,6 +62,18 @@ def init_database():
     """)
     conn.commit()
     conn.close()
+    cleanup_old_risky_events()
+
+
+def cleanup_old_risky_events():
+    """Remove risky events older than the retention window."""
+    cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM risky_events WHERE timestamp < ?", (cutoff,))
+    conn.commit()
+    conn.close()
 
 
 def fetch_risky_events_today():
@@ -94,13 +107,16 @@ def fetch_risky_events_today():
 
 def fetch_all_risky_events():
     """Fetch all risky events"""
+    cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT id, event_type, timestamp, risk_level
         FROM risky_events
+        WHERE timestamp >= ?
         ORDER BY timestamp DESC
-    """)
+    """, (cutoff,))
     
     rows = cursor.fetchall()
     conn.close()
@@ -116,6 +132,40 @@ def fetch_all_risky_events():
     ]
     
     return events
+
+
+
+def group_events_by_day(events):
+    """Group events by calendar day and add a per-day counter."""
+    grouped = {}
+    day_order = []
+
+    for event in events:
+        day_key = event["timestamp"][:10]
+        if day_key not in grouped:
+            grouped[day_key] = []
+            day_order.append(day_key)
+
+        grouped[day_key].append(event)
+
+    grouped_events = []
+    for day_key in day_order:
+        day_events = []
+        for index, event in enumerate(grouped[day_key], start=1):
+            day_events.append({
+                **event,
+                "daily_counter": index,
+                "date": day_key,
+            })
+
+        grouped_events.append({
+            "date": day_key,
+            "label": datetime.strptime(day_key, "%Y-%m-%d").strftime("%A, %B %d, %Y"),
+            "count": len(day_events),
+            "events": day_events,
+        })
+
+    return grouped_events
 
 
 # ============================================================
@@ -242,6 +292,7 @@ def get_events_today():
         events = fetch_risky_events_today()
         return jsonify({
             "events": events,
+            "grouped_events": group_events_by_day(events),
             "count": len(events),
             "timestamp": datetime.now().isoformat()
         }), 200
@@ -256,6 +307,7 @@ def get_all_events():
         events = fetch_all_risky_events()
         return jsonify({
             "events": events,
+            "grouped_events": group_events_by_day(events),
             "count": len(events),
             "timestamp": datetime.now().isoformat()
         }), 200

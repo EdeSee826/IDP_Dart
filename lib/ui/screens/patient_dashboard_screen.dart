@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/patient_state.dart';
+import '../../models/risk_event.dart';
 import '../../services/backend_service.dart';
 import '../../state/backend_status_provider.dart';
 import '../../state/patient_controller.dart';
@@ -69,6 +70,10 @@ class _PatientDashboardScreenState
     });
 
     final state = ref.watch(patientStateWithEventsProvider);
+    final weeklyEvents = ref.watch(riskyEventsLogProvider).maybeWhen(
+          data: (events) => events,
+          orElse: () => state.events,
+        );
     final backendStatus = ref.watch(backendStatusProvider);
     final latestTimestamp = state.latestEventTimestamp == null
         ? 'No event yet'
@@ -85,7 +90,7 @@ class _PatientDashboardScreenState
         const SizedBox(height: 12),
         _ringMetrics(state, backendStatus),
         const SizedBox(height: 14),
-        _sensorAndRiskSection(state, backendStatus),
+        _sensorAndRiskSection(state, backendStatus, weeklyEvents),
       ],
     );
   }
@@ -1106,6 +1111,7 @@ class _PatientDashboardScreenState
   Widget _sensorAndRiskSection(
     PatientState state,
     BackendStatusState backendStatus,
+    List<RiskEvent> weeklyEvents,
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1118,7 +1124,7 @@ class _PatientDashboardScreenState
               const SizedBox(height: 12),
               _sensorImagePanel(state, backendStatus),
               const SizedBox(height: 12),
-              RiskEventsTimeChart(events: state.events, compact: true),
+              RiskEventsTimeChart(events: weeklyEvents, compact: true),
             ],
           );
         }
@@ -1150,8 +1156,10 @@ class _PatientDashboardScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 5,
-                  child:
-                      RiskEventsTimeChart(events: state.events, compact: true),
+                  child: RiskEventsTimeChart(
+                    events: weeklyEvents,
+                    compact: true,
+                  ),
                 ),
               ],
             ),

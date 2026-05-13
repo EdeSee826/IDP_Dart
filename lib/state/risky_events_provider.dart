@@ -14,6 +14,18 @@ final riskyEventsProvider = FutureProvider<List<RiskEvent>>((ref) async {
       .toList();
 });
 
+final riskyEventsLogProvider = FutureProvider<List<RiskEvent>>((ref) async {
+  final events = await BackendService.fetchAllEvents();
+  return events
+      .map((e) => RiskEvent.fromBackend(
+            id: e.id,
+            eventType: e.eventType,
+            timestamp: e.timestamp,
+            riskLevel: e.riskLevel,
+          ))
+      .toList();
+});
+
 final riskyEventsRefreshProvider = Provider<Future<void> Function()>((ref) {
   return () async {
     await Future.delayed(const Duration(milliseconds: 100));
