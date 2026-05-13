@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../state/backend_status_provider.dart';
 import '../../state/patient_controller.dart';
 import '../../state/session_controller.dart';
+import '../widgets/sensor_connection_panel.dart';
 
 class OnboardingFlowScreen extends ConsumerStatefulWidget {
   const OnboardingFlowScreen({super.key});
@@ -15,9 +17,6 @@ class OnboardingFlowScreen extends ConsumerStatefulWidget {
 class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
   final PageController _pageController = PageController();
   int _pageIndex = 0;
-  bool _connecting = false;
-  bool _sensor1Connected = false;
-  bool _sensor2Connected = false;
 
   @override
   void dispose() {
@@ -33,30 +32,6 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
-  }
-
-  Future<void> _connectSensors() async {
-    if (_connecting) {
-      return;
-    }
-
-    setState(() {
-      _connecting = true;
-    });
-
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-
-    if (!mounted) {
-      return;
-    }
-
-    ref.read(patientControllerProvider.notifier).setMockSensorsConnected();
-
-    setState(() {
-      _sensor1Connected = true;
-      _sensor2Connected = true;
-      _connecting = false;
-    });
   }
 
   Future<void> _enterDashboard() async {
@@ -132,7 +107,7 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
     required String title,
     required String subtitle,
     required Widget content,
-    required Widget primaryAction,
+    Widget? primaryAction,
   }) {
     return Center(
       child: SingleChildScrollView(
@@ -176,7 +151,9 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                 const SizedBox(height: 22),
                 content,
                 const SizedBox(height: 24),
-                SizedBox(width: double.infinity, child: primaryAction),
+                if (primaryAction != null) ...[
+                  SizedBox(width: double.infinity, child: primaryAction),
+                ],
               ],
             ),
           ),
@@ -233,22 +210,153 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
   Widget _sensorPlacementPage() {
     return _pageCard(
       title: 'Sensor Placement',
-      subtitle:
-          'Place both IMU sensors comfortably for reliable daily monitoring.',
+      subtitle: 'Place both wearable sensors comfortably for reliable daily monitoring.',
       content: Column(
         children: [
-          _placementCard(
-            index: 1,
-            title: 'Upper Arm Sensor',
-            detail: 'Place above the elbow on the upper arm.',
+          // MAIN IMAGE SECTION
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              height: 320,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'image_2.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFEEF4F6), Color(0xFFDDEBE8)],
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.accessibility_new_rounded, size: 66, color: Color(0xFF7A8698)),
+                      ),
+                    ),
+                  ),
+
+                  // Add interactive markers aligned to image positions
+                  Align(
+                    alignment: const FractionalOffset(0.24, 0.30),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: GestureDetector(
+                        onTap: () => _showSensorSheet(
+                          title: 'Sensor 1: Upper Arm Sensor',
+                          connected: ref.read(backendStatusProvider).device1Connected,
+                          batteryLevel: ref.read(patientStateWithEventsProvider).device1BatteryLevel,
+                        ),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: ref.read(backendStatusProvider).device1Connected
+                                ? const Color(0xFF20B26C)
+                                : const Color(0xFFE5484D),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x22000000),
+                                blurRadius: 6,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Text('1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  Align(
+                    alignment: const FractionalOffset(0.18, 0.80),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: GestureDetector(
+                        onTap: () => _showSensorSheet(
+                          title: 'Sensor 2: Wrist Sensor',
+                          connected: ref.read(backendStatusProvider).device2Connected,
+                          batteryLevel: ref.read(patientStateWithEventsProvider).device2BatteryLevel,
+                        ),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: ref.read(backendStatusProvider).device2Connected
+                                ? const Color(0xFF20B26C)
+                                : const Color(0xFFE5484D),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x22000000),
+                                blurRadius: 6,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Text('2', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 10),
-          _placementCard(
-            index: 2,
-            title: 'Forearm Sensor',
-            detail: 'Place above the wrist on the forearm.',
-          ),
+          const SizedBox(height: 16),
+
+          // SENSOR CLOSE-UP SECTION
+          LayoutBuilder(builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 500;
+            return isNarrow
+                ? Column(
+                    children: [
+                      _instructionCard(
+                        asset: 'image_3.png',
+                        title: 'Sensor 1: Upper Arm Sensor',
+                        description: 'Placed above the elbow region on the upper arm.',
+                      ),
+                      const SizedBox(height: 10),
+                      _instructionCard(
+                        asset: 'image_4.png',
+                        title: 'Sensor 2: Wrist Sensor',
+                        description: 'Placed comfortably near the wrist/forearm region.',
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Expanded(
+                        child: _instructionCard(
+                          asset: 'image_3.png',
+                          title: 'Sensor 1: Upper Arm Sensor',
+                          description: 'Placed above the elbow region on the upper arm.',
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _instructionCard(
+                          asset: 'image_4.png',
+                          title: 'Sensor 2: Wrist Sensor',
+                          description: 'Placed comfortably near the wrist/forearm region.',
+                        ),
+                      ),
+                    ],
+                  );
+          }),
+
           const SizedBox(height: 14),
+
+          // PLACEMENT TIPS (kept)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
@@ -288,142 +396,130 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
     );
   }
 
-  Widget _placementCard({
-    required int index,
+  Widget _instructionCard({
+    required String asset,
     required String title,
-    required String detail,
+    required String description,
   }) {
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FCFB),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFD6ECE4)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x120F5BA8),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 15,
-            backgroundColor: const Color(0xFF2D8E90),
-            child: Text(
-              '$index',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.asset(
+              asset,
+              height: 110,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                height: 110,
+                color: const Color(0xFFF6F9F8),
+                child: const Center(
+                  child: Icon(Icons.photo, color: Color(0xFF9AA5AE)),
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Sensor $index: $title',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1D3E53),
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  detail,
-                  style: const TextStyle(color: Color(0xFF526676)),
-                ),
-              ],
-            ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1D3E53)),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            description,
+            style: const TextStyle(color: Color(0xFF526676)),
           ),
         ],
       ),
     );
   }
+
+  
 
   Widget _connectSensorsPage() {
     return _pageCard(
       title: 'Connect Sensors',
-      subtitle: 'We will quickly check both sensors before monitoring begins.',
-      content: Column(
-        children: [
-          _sensorConnectionCard(
-            sensorName: 'Sensor 1: Upper Arm Sensor',
-            connected: _sensor1Connected,
-          ),
-          const SizedBox(height: 10),
-          _sensorConnectionCard(
-            sensorName: 'Sensor 2: Forearm Sensor',
-            connected: _sensor2Connected,
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _connecting ? null : _connectSensors,
-              icon: Icon(_connecting
-                  ? Icons.sync_rounded
-                  : Icons.bluetooth_connected_rounded),
-              label: Text(_connecting ? 'Connecting...' : 'Connect Sensors'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF2D8E90),
-                side: const BorderSide(color: Color(0xFF2D8E90)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ),
-        ],
+      subtitle: 'Connect both wearable sensors before we begin monitoring.',
+      content: SensorConnectionPanel(
+        showContinueButton: true,
+        showImage: false,
+        continueLabel: 'Continue',
+        onContinue: _enterDashboard,
       ),
-      primaryAction: FilledButton(
-        onPressed: (_sensor1Connected && _sensor2Connected) ? _nextPage : null,
-        style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFF2D8E90),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-        child: const Text('Continue'),
-      ),
+      primaryAction: null,
     );
   }
 
-  Widget _sensorConnectionCard({
-    required String sensorName,
+  Future<void> _showSensorSheet({
+    required String title,
     required bool connected,
-  }) {
-    final color = connected ? const Color(0xFF159C6E) : const Color(0xFF688096);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: connected ? const Color(0xFFEAF8F1) : const Color(0xFFF4F8FC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: connected ? const Color(0xFFBDE7D2) : const Color(0xFFDCE8F3),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            connected ? Icons.check_circle_rounded : Icons.sensors_outlined,
-            color: color,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              sensorName,
-              style: const TextStyle(
-                color: Color(0xFF244256),
-                fontWeight: FontWeight.w700,
+    required int? batteryLevel,
+  }) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
-            ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Status:',
+                      style: TextStyle(color: Color(0xFF667085))),
+                  const SizedBox(width: 8),
+                  Text(
+                    connected ? 'Connected' : 'Disconnected',
+                    style: TextStyle(
+                      color: connected ? const Color(0xFF20B26C) : const Color(0xFFE5484D),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text('Battery:', style: TextStyle(color: Color(0xFF667085))),
+                  const SizedBox(width: 8),
+                  Text(
+                    batteryLevel != null ? '$batteryLevel%' : 'Not exposed',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Connection status is managed by the backend.',
+                style: TextStyle(color: Color(0xFF667085)),
+              ),
+            ],
           ),
-          Text(
-            connected ? 'Connected' : 'Not connected',
-            style: TextStyle(color: color, fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
