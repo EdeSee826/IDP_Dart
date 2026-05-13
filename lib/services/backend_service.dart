@@ -209,6 +209,24 @@ class BackendService {
     }
   }
 
+  // Fetch grouped events (by day) from the backend
+  static Future<List<Map<String, dynamic>>> fetchGroupedEvents() async {
+    try {
+      final response =
+          await http.get(Uri.parse('$baseUrl/events/all')).timeout(timeout);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        final grouped = (data['grouped_events'] as List<dynamic>?) ?? [];
+        return grouped.map((g) => g as Map<String, dynamic>).toList();
+      } else {
+        return [];
+      }
+    } catch (e) {
+      return [];
+    }
+  }
+
   // Clear all events
   static Future<bool> clearAllEvents() async {
     try {

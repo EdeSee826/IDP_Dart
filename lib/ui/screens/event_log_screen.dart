@@ -1,11 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/risk_event.dart';
-import '../../state/patient_controller.dart';
 import '../../state/risky_events_provider.dart';
 
 class EventLogScreen extends ConsumerStatefulWidget {
@@ -25,7 +22,7 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   void _startPeriodicRefresh() {
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
-        ref.invalidate(riskyEventsLogProvider);
+        ref.invalidate(riskyGroupedEventsProvider);
         _startPeriodicRefresh();
       }
     });
@@ -33,33 +30,25 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(patientControllerProvider);
-    final backendEvents = ref.watch(riskyEventsLogProvider);
+    final grouped = ref.watch(riskyGroupedEventsProvider);
 
-    return backendEvents.when(
-      loading: () => const Center(
-        child: CircularProgressIndicator(),
-      ),
-      error: (error, stack) => Center(
+    return grouped.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, stack) => Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text('Error loading events'),
             const SizedBox(height: 10),
             ElevatedButton(
-              onPressed: () {
-                ref.invalidate(riskyEventsLogProvider);
-              },
+              onPressed: () => ref.invalidate(riskyGroupedEventsProvider),
               child: const Text('Retry'),
             ),
           ],
         ),
       ),
-      data: (backendEvents) {
-        final events = backendEvents.isNotEmpty ? backendEvents : state.events;
-        final groupedEvents = _buildGroupedEvents(events);
-
-        if (groupedEvents.isEmpty) {
+      data: (groups) {
+        if (groups.isEmpty) {
           return const Center(
             child: Text(
               'No risky events detected yet.',
@@ -70,11 +59,11 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
 
         return RefreshIndicator(
           onRefresh: () async {
-            ref.invalidate(riskyEventsLogProvider);
+            ref.invalidate(riskyGroupedEventsProvider);
           },
           child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: groupedEvents.length + 1,
+            itemCount: groups.length + 1,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               if (index == 0) {
@@ -87,20 +76,18 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
                 );
               }
 
-              final group = groupedEvents[index - 1];
+              final group = groups[index - 1];
 
               return _DayEventButton(
                 label: group.label,
-                eventCount: group.events.length,
+                eventCount: group.count,
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => EventDayDetailScreen(
-                        label: group.label,
-                        events: group.events,
-                      ),
+                  Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => EventDayDetailScreen(
+                      label: group.label,
+                      events: group.events,
                     ),
-                  );
+                  ));
                 },
               );
             },
@@ -111,45 +98,7 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   }
 }
 
-class _GroupedEvents {
-  const _GroupedEvents({
-    required this.date,
-    required this.label,
-    required this.events,
-  });
-
-  final DateTime date;
-  final String label;
-  final List<RiskEvent> events;
-}
-
-List<_GroupedEvents> _buildGroupedEvents(List<RiskEvent> events) {
-  final sortedEvents = [...events]
-    ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-  final groups = <String, List<RiskEvent>>{};
-  final order = <String>[];
-
-  for (final event in sortedEvents) {
-    final dayKey = DateFormat('yyyy-MM-dd').format(event.timestamp);
-    groups.putIfAbsent(dayKey, () {
-      order.add(dayKey);
-      return <RiskEvent>[];
-    });
-    groups[dayKey]!.add(event);
-  }
-
-  return order.map((dayKey) {
-    final dayEvents = groups[dayKey]!;
-    final label =
-        DateFormat('EEEE, MMM d, yyyy').format(dayEvents.first.timestamp);
-    return _GroupedEvents(
-      date: DateTime.parse(dayKey),
-      label: label,
-      events: dayEvents,
-    );
-  }).toList();
-}
+// Uses grouped events from backend via `riskyGroupedEventsProvider`.
 
 class _DayEventButton extends StatelessWidget {
   const _DayEventButton({
