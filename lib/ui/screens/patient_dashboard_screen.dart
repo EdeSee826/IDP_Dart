@@ -5,11 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/patient_state.dart';
-import '../../models/risk_event.dart';
 import '../../services/backend_service.dart';
 import '../../state/backend_status_provider.dart';
 import '../../state/patient_controller.dart';
 import '../../state/risky_events_provider.dart';
+import '../widgets/camera_button.dart';
+import '../widgets/ai_risk_trend_section.dart';
 import '../widgets/sensor_connection_panel.dart';
 import '../widgets/risk_events_time_chart.dart';
 
@@ -26,6 +27,7 @@ class _PatientDashboardScreenState
   static const Duration _flushInterval = Duration(days: 1);
   static const Duration _medicationInterval = Duration(hours: 12);
   static const Duration _dressingInterval = Duration(days: 7);
+  final bool useDemoRiskTrendData = true;
   final ScrollController _checklistScrollController = ScrollController();
 
   String? _movingTaskTitle;
@@ -70,10 +72,6 @@ class _PatientDashboardScreenState
     });
 
     final state = ref.watch(patientStateWithEventsProvider);
-    final weeklyEvents = ref.watch(riskyEventsLogProvider).maybeWhen(
-          data: (events) => events,
-          orElse: () => state.events,
-        );
     final backendStatus = ref.watch(backendStatusProvider);
     final latestTimestamp = state.latestEventTimestamp == null
         ? 'No event yet'
@@ -90,7 +88,7 @@ class _PatientDashboardScreenState
         const SizedBox(height: 12),
         _ringMetrics(state, backendStatus),
         const SizedBox(height: 14),
-        _sensorAndRiskSection(state, backendStatus, weeklyEvents),
+        _sensorAndRiskSection(state, backendStatus),
       ],
     );
   }
@@ -103,9 +101,9 @@ class _PatientDashboardScreenState
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color.fromARGB(255, 193, 206, 207),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2EBF3)),
+        border: Border.all(color: const Color.fromARGB(255, 174, 186, 182)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,49 +113,74 @@ class _PatientDashboardScreenState
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF1D2738),
+              color: Color.fromARGB(255, 44, 48, 53),
             ),
           ),
           const SizedBox(height: 10),
-          _overviewLine(
-            label: 'Sensor 1: Upper Arm Sensor',
-            value: state.device1Connected ? 'Connected' : 'Not connected',
-            good: state.device1Connected,
-          ),
-          const SizedBox(height: 6),
-          _overviewLine(
-            label: 'Sensor 2: Wrist Sensor',
-            value: state.device2Connected ? 'Connected' : 'Not connected',
-            good: state.device2Connected,
-          ),
-          const SizedBox(height: 6),
-          _overviewLine(
-            label: 'Today\'s movement count',
-            value: '${state.dailyEventCount}',
-            good: true,
-          ),
-          const SizedBox(height: 6),
-          _overviewLine(
-            label: 'Dressing reminder',
-            value: dressingReminder,
-            good: true,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Daily care checklist: $completedCount / $_totalChecklistItems complete',
-            style: const TextStyle(
-              color: Color(0xFF334155),
-              fontWeight: FontWeight.w700,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color.fromARGB(255, 231, 244, 245),
+              borderRadius: BorderRadius.circular(14),
+              border:
+                  Border.all(color: const Color.fromARGB(255, 173, 193, 195)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Dressing reminder',
+                  style: TextStyle(
+                    color: Color(0xFF475467),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  dressingReminder,
+                  style: const TextStyle(
+                    color: Color.fromARGB(255, 52, 128, 103),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              minHeight: 7,
-              value: progress,
-              backgroundColor: const Color(0xFFD7E5F0),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2D8E90)),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE5EAF1)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Daily care checklist: $completedCount / $_totalChecklistItems complete',
+                  style: const TextStyle(
+                    color: Color(0xFF334155),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 7,
+                    value: progress,
+                    backgroundColor: const Color(0xFFD7E5F0),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Color(0xFF2D8E90),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 10),
@@ -179,32 +202,6 @@ class _PatientDashboardScreenState
           ),
         ],
       ),
-    );
-  }
-
-  Widget _overviewLine({
-    required String label,
-    required String value,
-    required bool good,
-  }) {
-    return Row(
-      children: [
-        Text(
-          '$label:',
-          style: const TextStyle(
-            color: Color(0xFF475467),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          value,
-          style: TextStyle(
-            color: good ? const Color(0xFF13795B) : const Color(0xFF8A9099),
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
     );
   }
 
@@ -706,7 +703,8 @@ class _PatientDashboardScreenState
               final inCurrentMonth = date.month == _calendarMonth.month;
               final isToday = _isSameDay(DateTime.now(), date);
               final events = _eventsForDate(state, date);
-              final hasAppointment = _isSameDay(state.nextAppointmentDate, date);
+              final hasAppointment =
+                  _isSameDay(state.nextAppointmentDate, date);
 
               return InkWell(
                 borderRadius: BorderRadius.circular(6),
@@ -1111,7 +1109,6 @@ class _PatientDashboardScreenState
   Widget _sensorAndRiskSection(
     PatientState state,
     BackendStatusState backendStatus,
-    List<RiskEvent> weeklyEvents,
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1124,7 +1121,14 @@ class _PatientDashboardScreenState
               const SizedBox(height: 12),
               _sensorImagePanel(state, backendStatus),
               const SizedBox(height: 12),
-              RiskEventsTimeChart(events: weeklyEvents, compact: true),
+              _cameraCapturePanel(),
+              const SizedBox(height: 12),
+              RiskEventsTimeChart(events: state.events, compact: true),
+              const SizedBox(height: 12),
+              AiRiskTrendSection(
+                events: state.events,
+                useDemoRiskTrendData: useDemoRiskTrendData,
+              ),
             ],
           );
         }
@@ -1156,12 +1160,24 @@ class _PatientDashboardScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   flex: 5,
-                  child: RiskEventsTimeChart(
-                    events: weeklyEvents,
-                    compact: true,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _cameraCapturePanel(),
+                      const SizedBox(height: 12),
+                      RiskEventsTimeChart(
+                        events: state.events,
+                        compact: true,
+                      ),
+                    ],
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            AiRiskTrendSection(
+              events: state.events,
+              useDemoRiskTrendData: useDemoRiskTrendData,
             ),
           ],
         );
@@ -1169,7 +1185,8 @@ class _PatientDashboardScreenState
     );
   }
 
-  Widget _sensorImagePanel(PatientState state, BackendStatusState backendStatus) {
+  Widget _sensorImagePanel(
+      PatientState state, BackendStatusState backendStatus) {
     return SensorConnectionPanel(
       onSensorTap1: () => _showSensorSheet(
         title: 'Sensor 1: Upper Arm Sensor',
@@ -1183,6 +1200,43 @@ class _PatientDashboardScreenState
       ),
       showContinueButton: false,
       showImage: true,
+    );
+  }
+
+  Widget _cameraCapturePanel() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE3E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Daily PICC Site Check',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1A1F2D),
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Take a quick daily PICC site photo to help track healing and monitor possible catheter movement.',
+            style: TextStyle(
+              color: Color(0xFF667085),
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Center(
+            child: CameraButton(),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1279,8 +1333,7 @@ class _PatientDashboardScreenState
             ),
           ),
           const SizedBox(height: 8),
-          if (latestTimestamp != null)
-            _metric('Latest Event', latestTimestamp),
+          if (latestTimestamp != null) _metric('Latest Event', latestTimestamp),
           const SizedBox(height: 8),
           const Text(
             'Your monitoring is active and your care routine is on track today.',
@@ -1320,9 +1373,12 @@ class _PatientDashboardScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(title,
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
           const SizedBox(height: 6),
-          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          Text(value,
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -1331,15 +1387,15 @@ class _PatientDashboardScreenState
   Widget _backendNoticeBanner(BackendStatusState backendStatus) {
     final backendReady = backendStatus.backendReady;
     final backgroundColor =
-      backendReady ? const Color(0xFFEAF7F1) : const Color(0xFFF6F8FB);
+        backendReady ? const Color(0xFFEAF7F1) : const Color(0xFFF6F8FB);
     final borderColor =
-      backendReady ? const Color(0xFFB7E4C7) : const Color(0xFFD7E2EA);
+        backendReady ? const Color(0xFFB7E4C7) : const Color(0xFFD7E2EA);
     final accentColor =
-      backendReady ? const Color(0xFF0F7B6C) : const Color(0xFF5F6C7B);
+        backendReady ? const Color(0xFF0F7B6C) : const Color(0xFF5F6C7B);
 
     final message = backendReady
-      ? 'Monitoring services are ready. Use the Wearable Sensors panel to connect or pause monitoring.'
-      : 'Monitoring services are not ready yet. The app will reconnect when the backend is available.';
+        ? 'Monitoring services are ready. Use the Wearable Sensors panel to connect or pause monitoring.'
+        : 'Monitoring services are not ready yet. The app will reconnect when the backend is available.';
 
     return Container(
       width: double.infinity,
