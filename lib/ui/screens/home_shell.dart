@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../state/session_controller.dart';
 import 'event_log_screen.dart';
 import 'patient_dashboard_screen.dart';
+import 'picc_guide_screen.dart'; // add this
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
@@ -17,6 +18,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   static const _pages = [
     PatientDashboardScreen(),
+    PiccGuideScreen(), // add this
     EventLogScreen(),
   ];
 
@@ -69,6 +71,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.health_and_safety_outlined),
+            selectedIcon: Icon(Icons.health_and_safety),
+            label: 'Guide',
           ),
           NavigationDestination(
             icon: Icon(Icons.list_alt_outlined),
