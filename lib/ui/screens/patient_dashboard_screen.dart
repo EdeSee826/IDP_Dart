@@ -2,13 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/patient_state.dart';
 import '../../services/backend_service.dart';
 import '../../state/backend_status_provider.dart';
+import '../../state/language_controller.dart';
 import '../../state/patient_controller.dart';
 import '../../state/risky_events_provider.dart';
+import '../../state/session_controller.dart';
 import '../widgets/camera_button.dart';
 import '../widgets/ai_risk_trend_section.dart';
 import '../widgets/sensor_connection_panel.dart';
@@ -32,6 +36,15 @@ class _PatientDashboardScreenState
 
   String? _movingTaskTitle;
   DateTime _calendarMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  bool _piccAnalyzing = false;
+  PiccAnalysisResult? _piccAnalysisResult;
+  String? _piccAnalysisError;
+  String? _piccCycleKey;
+  bool _piccCycleLoading = false;
+  double? _baselinePiccLengthCm;
+  double? _latestPiccLengthCm;
+  DateTime? _baselinePiccScannedAt;
+  DateTime? _latestPiccScannedAt;
 
   @override
   void initState() {
@@ -40,7 +53,7 @@ class _PatientDashboardScreenState
   }
 
   void _startPeriodicRefresh() {
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
         ref.invalidate(riskyEventsProvider);
         _startPeriodicRefresh();
@@ -73,8 +86,9 @@ class _PatientDashboardScreenState
 
     final state = ref.watch(patientStateWithEventsProvider);
     final backendStatus = ref.watch(backendStatusProvider);
+    final strings = ref.watch(appStringsProvider);
     final latestTimestamp = state.latestEventTimestamp == null
-        ? 'No event yet'
+        ? strings.text('No event yet')
         : DateFormat('hh:mm:ss a').format(state.latestEventTimestamp!);
 
     return ListView(
@@ -82,9 +96,7 @@ class _PatientDashboardScreenState
       children: [
         _backendNoticeBanner(backendStatus),
         const SizedBox(height: 12),
-        _topSummary(state, latestTimestamp),
-        const SizedBox(height: 12),
-        _careOverviewCard(state),
+        _topSummaryAndCareOverview(state, latestTimestamp),
         const SizedBox(height: 12),
         _ringMetrics(state, backendStatus),
         const SizedBox(height: 14),
@@ -93,8 +105,45 @@ class _PatientDashboardScreenState
     );
   }
 
+  Widget _topSummaryAndCareOverview(
+    PatientState state,
+    String latestTimestamp,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 900) {
+          return Column(
+            children: [
+              _topSummary(state, latestTimestamp),
+              const SizedBox(height: 12),
+              _careOverviewCard(state),
+            ],
+          );
+        }
+
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: 5,
+                child: _topSummary(state, latestTimestamp),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 5,
+                child: _careOverviewCard(state),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _careOverviewCard(PatientState state) {
-    final dressingReminder = _dressingReminderText(state);
+    final strings = ref.watch(appStringsProvider);
+    final dressingReminder = _dressingReminderText(state, strings);
     final completedCount = _completedChecklistItems(state);
     final progress = completedCount / _totalChecklistItems;
 
@@ -108,9 +157,9 @@ class _PatientDashboardScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Today\'s Care Overview',
-            style: TextStyle(
+          Text(
+            strings.text('Today\'s Care Overview'),
+            style: const TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w800,
               color: Color.fromARGB(255, 44, 48, 53),
@@ -129,9 +178,9 @@ class _PatientDashboardScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Dressing reminder',
-                  style: TextStyle(
+                Text(
+                  strings.text('Dressing reminder'),
+                  style: const TextStyle(
                     color: Color(0xFF475467),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
@@ -162,7 +211,10 @@ class _PatientDashboardScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Daily care checklist: $completedCount / $_totalChecklistItems complete',
+                  strings.dailyChecklistProgress(
+                    completedCount,
+                    _totalChecklistItems,
+                  ),
                   style: const TextStyle(
                     color: Color(0xFF334155),
                     fontWeight: FontWeight.w700,
@@ -192,9 +244,11 @@ class _PatientDashboardScreenState
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFFD6E9F8)),
             ),
-            child: const Text(
-              'You are doing well. Keep your PICC arm comfortable and continue your daily care routine.',
-              style: TextStyle(
+            child: Text(
+              strings.text(
+                'You are doing well. Keep your PICC arm comfortable and continue your daily care routine.',
+              ),
+              style: const TextStyle(
                 color: Color(0xFF234A63),
                 fontWeight: FontWeight.w600,
               ),
@@ -205,10 +259,10 @@ class _PatientDashboardScreenState
     );
   }
 
-  String _dressingReminderText(PatientState state) {
+  String _dressingReminderText(PatientState state, AppStrings strings) {
     final lastChange = state.lastDressingChangeAt;
     if (lastChange == null) {
-      return 'Please schedule your first dressing check';
+      return strings.text('Please schedule your first dressing check');
     }
 
     final dueDate = DateTime(
@@ -221,18 +275,19 @@ class _PatientDashboardScreenState
     final daysLeft = dueDate.difference(todayDate).inDays;
 
     if (daysLeft > 1) {
-      return 'Next change in $daysLeft days';
+      return strings.nextChangeInDays(daysLeft);
     }
     if (daysLeft == 1) {
-      return 'Next change tomorrow';
+      return strings.text('Next change tomorrow');
     }
     if (daysLeft == 0) {
-      return 'Dressing check due today';
+      return strings.text('Dressing change due today');
     }
-    return 'Please update dressing care today';
+    return strings.text('Dressing change overdue');
   }
 
   Widget _patientTodoCard(PatientState state) {
+    final strings = ref.watch(appStringsProvider);
     final reminders = _buildSmartReminders(state);
     final missedAlerts = _buildMissedTaskAlerts(state);
     final tasks = _buildChecklistItems(state);
@@ -252,9 +307,9 @@ class _PatientDashboardScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Patient To-Do Checklist',
-            style: TextStyle(
+          Text(
+            strings.text('Patient To-Do Checklist'),
+            style: const TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w800,
               color: Color(0xFF1D2738),
@@ -278,7 +333,10 @@ class _PatientDashboardScreenState
                 Row(
                   children: [
                     Text(
-                      '$completedCount / $_totalChecklistItems completed',
+                      strings.completedCount(
+                        completedCount,
+                        _totalChecklistItems,
+                      ),
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1D2738),
@@ -330,7 +388,7 @@ class _PatientDashboardScreenState
                   children: [
                     if (missedAlerts.isNotEmpty) ...[
                       _infoBox(
-                        title: 'Missed Task Alerts',
+                        title: strings.text('Missed Task Alerts'),
                         messages: missedAlerts,
                         background: const Color(0xFFFFF1F1),
                         border: const Color(0xFFF9CACA),
@@ -340,7 +398,7 @@ class _PatientDashboardScreenState
                     ],
                     if (reminders.isNotEmpty) ...[
                       _infoBox(
-                        title: 'Smart Reminders',
+                        title: strings.text('Smart Reminders'),
                         messages: reminders,
                         background: const Color(0xFFEFF8FF),
                         border: const Color(0xFFD1E9FF),
@@ -401,22 +459,22 @@ class _PatientDashboardScreenState
   }
 
   List<String> _buildMissedTaskAlerts(PatientState state) {
+    final strings = ref.watch(appStringsProvider);
     final alerts = <String>[];
     if (state.flushMissedCount > 0) {
-      alerts.add('Flushing was missed $state.flushMissedCount day(s).');
+      alerts.add(strings.flushingMissed(state.flushMissedCount));
     }
     if (state.medicationMissedCount > 0) {
-      alerts.add(
-          'Medication timing was missed $state.medicationMissedCount day(s).');
+      alerts.add(strings.medicationMissed(state.medicationMissedCount));
     }
     if (state.dressingMissedCount > 0) {
-      alerts.add(
-          'Dressing condition check was missed $state.dressingMissedCount day(s).');
+      alerts.add(strings.dressingCheckMissed(state.dressingMissedCount));
     }
     return alerts;
   }
 
   List<String> _buildSmartReminders(PatientState state) {
+    final strings = ref.watch(appStringsProvider);
     final reminders = <String>[];
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -430,7 +488,10 @@ class _PatientDashboardScreenState
         now.isAfter(flushDue.subtract(Duration(minutes: flushLeadMins))) &&
         !state.flushingCompleted) {
       reminders.add(
-        'Flush schedule due at ${DateFormat('hh:mm a').format(flushDue)} (adaptive lead $flushLeadMins min).',
+        strings.flushDue(
+          DateFormat('hh:mm a').format(flushDue),
+          flushLeadMins,
+        ),
       );
     }
 
@@ -439,7 +500,10 @@ class _PatientDashboardScreenState
         now.isAfter(medicationDue.subtract(Duration(minutes: medLeadMins))) &&
         !state.medicationTimingCompleted) {
       reminders.add(
-        'Medication timing due at ${DateFormat('hh:mm a').format(medicationDue)} (adaptive lead $medLeadMins min).',
+        strings.medicationDue(
+          DateFormat('hh:mm a').format(medicationDue),
+          medLeadMins,
+        ),
       );
     }
 
@@ -451,13 +515,16 @@ class _PatientDashboardScreenState
 
       if (daysUntilDue == 1) {
         reminders.add(
-          'Dressing was changed 6 days ago. Please change dressing tomorrow (${DateFormat('dd MMM').format(dressingDue)}).',
+          strings.dressingTomorrow(DateFormat('dd MMM').format(dressingDue)),
         );
       } else if (daysUntilDue <= 0 &&
           now.isAfter(
               dressingDue.subtract(Duration(minutes: dressingLeadMins)))) {
         reminders.add(
-          'Dressing change target is ${DateFormat('dd MMM').format(dressingDue)} (every 7 days, adaptive lead $dressingLeadMins min).',
+          strings.dressingTarget(
+            DateFormat('dd MMM').format(dressingDue),
+            dressingLeadMins,
+          ),
         );
       }
     }
@@ -468,9 +535,9 @@ class _PatientDashboardScreenState
           appointmentDate.year, appointmentDate.month, appointmentDate.day);
       final daysToAppointment = appointmentDay.difference(today).inDays;
       if (daysToAppointment == 0) {
-        reminders.add('Appointment is scheduled for today.');
+        reminders.add(strings.appointmentScheduled(false));
       } else if (daysToAppointment == 1) {
-        reminders.add('Appointment is scheduled for tomorrow.');
+        reminders.add(strings.appointmentScheduled(true));
       }
     }
 
@@ -523,9 +590,10 @@ class _PatientDashboardScreenState
   }
 
   List<_ChecklistTask> _buildChecklistItems(PatientState state) {
+    final strings = ref.watch(appStringsProvider);
     return [
       _ChecklistTask(
-        title: 'Site check (redness, swelling, pain)',
+        title: strings.text('Site check (redness, swelling, pain)'),
         value: state.symptomsChecked,
         icon: Icons.health_and_safety_outlined,
         onChanged: (value) => ref
@@ -533,8 +601,8 @@ class _PatientDashboardScreenState
             .setSymptomsChecked(value ?? false),
       ),
       _ChecklistTask(
-        title: 'Dressing condition',
-        subtitle: 'Keep dressing clean, dry, and intact',
+        title: strings.text('Dressing condition'),
+        subtitle: strings.text('Keep dressing clean, dry, and intact'),
         value: state.dressingConditionChecked,
         icon: Icons.checkroom_outlined,
         onChanged: (value) => ref
@@ -542,8 +610,8 @@ class _PatientDashboardScreenState
             .setDressingConditionChecked(value ?? false),
       ),
       _ChecklistTask(
-        title: 'Flushing reminder',
-        subtitle: 'Flush line at prescribed schedule',
+        title: strings.text('Flushing reminder'),
+        subtitle: strings.text('Flush line at prescribed schedule'),
         value: state.flushingCompleted,
         icon: Icons.water_drop_outlined,
         onChanged: (value) => ref
@@ -551,7 +619,7 @@ class _PatientDashboardScreenState
             .setFlushingCompleted(value ?? false),
       ),
       _ChecklistTask(
-        title: 'Dryness check',
+        title: strings.text('Dryness check'),
         value: state.drynessChecked,
         icon: Icons.wb_sunny_outlined,
         onChanged: (value) => ref
@@ -559,7 +627,7 @@ class _PatientDashboardScreenState
             .setDrynessChecked(value ?? false),
       ),
       _ChecklistTask(
-        title: 'Medication timing',
+        title: strings.text('Medication timing'),
         value: state.medicationTimingCompleted,
         icon: Icons.medication_outlined,
         onChanged: (value) => ref
@@ -567,8 +635,10 @@ class _PatientDashboardScreenState
             .setMedicationTimingCompleted(value ?? false),
       ),
       _ChecklistTask(
-        title: 'Check catheter length (VERY IMPORTANT)',
-        subtitle: 'Look at external line and confirm same length as before',
+        title: strings.text('Check catheter length (VERY IMPORTANT)'),
+        subtitle: strings.text(
+          'Look at external line and confirm same length as before',
+        ),
         value: state.catheterLengthChecked,
         icon: Icons.straighten_outlined,
         onChanged: (value) => ref
@@ -576,8 +646,10 @@ class _PatientDashboardScreenState
             .setCatheterLengthChecked(value ?? false),
       ),
       _ChecklistTask(
-        title: 'Avoid heavy movement or strain',
-        subtitle: 'Heavy lifting, sudden arm pulling, repetitive motion',
+        title: strings.text('Avoid heavy movement or strain'),
+        subtitle: strings.text(
+          'Heavy lifting, sudden arm pulling, repetitive motion',
+        ),
         value: state.movementPrecautionsChecked,
         icon: Icons.accessibility_new_outlined,
         onChanged: (value) => ref
@@ -585,7 +657,7 @@ class _PatientDashboardScreenState
             .setMovementPrecautionsChecked(value ?? false),
       ),
       _ChecklistTask(
-        title: 'Secure the line at all times',
+        title: strings.text('Secure the line at all times'),
         value: state.lineSecuredChecked,
         icon: Icons.link_outlined,
         onChanged: (value) => ref
@@ -596,9 +668,10 @@ class _PatientDashboardScreenState
   }
 
   Widget _calendarPlannerCard(PatientState state) {
-    final monthLabel = DateFormat('MMMM yyyy').format(_calendarMonth);
+    final strings = ref.watch(appStringsProvider);
+    final monthLabel = strings.monthYear(_calendarMonth);
     final gridDates = _monthGridDates(_calendarMonth);
-    const weekLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final weekLabels = strings.weekLabels;
 
     return Container(
       width: double.infinity,
@@ -613,9 +686,9 @@ class _PatientDashboardScreenState
         children: [
           Row(
             children: [
-              const Text(
-                'Calendar',
-                style: TextStyle(
+              Text(
+                strings.text('Calendar'),
+                style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 14,
                   color: Color(0xFF1D2738),
@@ -649,7 +722,7 @@ class _PatientDashboardScreenState
                 visualDensity: VisualDensity.compact,
                 constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                 padding: EdgeInsets.zero,
-                tooltip: 'Add event',
+                tooltip: strings.text('Add event'),
                 onPressed: () => _showAddCalendarEventDialog(state),
                 icon: const Icon(Icons.add_rounded),
               ),
@@ -781,7 +854,7 @@ class _PatientDashboardScreenState
                         ),
                       if (events.length > 2)
                         Text(
-                          '+${events.length - 2} more',
+                          strings.moreEvents(events.length - 2),
                           style: const TextStyle(
                             fontSize: 7,
                             fontWeight: FontWeight.w600,
@@ -800,6 +873,7 @@ class _PatientDashboardScreenState
   }
 
   List<_CalendarCellEvent> _eventsForDate(PatientState state, DateTime date) {
+    final strings = ref.watch(appStringsProvider);
     final events = <_CalendarCellEvent>[];
 
     final appointment = state.nextAppointmentDate;
@@ -808,7 +882,9 @@ class _PatientDashboardScreenState
           appointment == null ? '' : DateFormat('h:mm a').format(appointment);
       events.add(
         _CalendarCellEvent(
-          label: timeText.isEmpty ? 'Appt' : 'Appt $timeText',
+          label: timeText.isEmpty
+              ? strings.text('Appt')
+              : '${strings.text('Appt')} $timeText',
           background: const Color(0xFFE8E1FF),
           foreground: const Color(0xFF4A2FC8),
         ),
@@ -827,10 +903,10 @@ class _PatientDashboardScreenState
 
     if (_isSameDay(state.lastDressingChangeAt, date)) {
       events.add(
-        const _CalendarCellEvent(
-          label: 'Dressing',
-          background: Color(0xFFE6F4EA),
-          foreground: Color(0xFF0F7B6C),
+        _CalendarCellEvent(
+          label: strings.text('Dressing'),
+          background: const Color(0xFFE6F4EA),
+          foreground: const Color(0xFF0F7B6C),
         ),
       );
     }
@@ -857,6 +933,7 @@ class _PatientDashboardScreenState
     PatientState state, {
     DateTime? initialDate,
   }) async {
+    final strings = ref.read(appStringsProvider);
     final formKey = GlobalKey<FormState>();
     DateTime pickedDate = initialDate ?? DateTime.now();
     TimeOfDay pickedTime =
@@ -873,7 +950,7 @@ class _PatientDashboardScreenState
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Add Calendar Event'),
+              title: Text(strings.text('Add Calendar Event')),
               content: Form(
                 key: formKey,
                 child: Column(
@@ -882,16 +959,17 @@ class _PatientDashboardScreenState
                   children: [
                     DropdownButtonFormField<String>(
                       initialValue: eventType,
-                      decoration:
-                          const InputDecoration(labelText: 'Event type'),
-                      items: const [
+                      decoration: InputDecoration(
+                        labelText: strings.text('Event type'),
+                      ),
+                      items: [
                         DropdownMenuItem(
                           value: 'appointment',
-                          child: Text('Appointment'),
+                          child: Text(strings.text('Appointment')),
                         ),
                         DropdownMenuItem(
                           value: 'dressing',
-                          child: Text('Dressing change'),
+                          child: Text(strings.text('Dressing change')),
                         ),
                       ],
                       onChanged: (value) {
@@ -943,9 +1021,9 @@ class _PatientDashboardScreenState
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: locationController,
-                        decoration: const InputDecoration(
-                          labelText: 'Location',
-                          hintText: 'Clinic / hospital / room',
+                        decoration: InputDecoration(
+                          labelText: strings.text('Location'),
+                          hintText: strings.text('Clinic / hospital / room'),
                         ),
                       ),
                     ],
@@ -955,7 +1033,7 @@ class _PatientDashboardScreenState
               actions: [
                 TextButton(
                   onPressed: navigator.pop,
-                  child: const Text('Cancel'),
+                  child: Text(strings.text('Cancel')),
                 ),
                 FilledButton(
                   onPressed: () async {
@@ -997,7 +1075,7 @@ class _PatientDashboardScreenState
                     });
                     navigator.pop();
                   },
-                  child: const Text('Save'),
+                  child: Text(strings.text('Save')),
                 ),
               ],
             );
@@ -1115,13 +1193,13 @@ class _PatientDashboardScreenState
         if (constraints.maxWidth < 760) {
           return Column(
             children: [
+              _sensorImagePanel(state, backendStatus),
+              const SizedBox(height: 12),
+              _cameraCapturePanel(state),
+              const SizedBox(height: 12),
               _calendarPlannerCard(state),
               const SizedBox(height: 12),
               _patientTodoCard(state),
-              const SizedBox(height: 12),
-              _sensorImagePanel(state, backendStatus),
-              const SizedBox(height: 12),
-              _cameraCapturePanel(),
               const SizedBox(height: 12),
               RiskEventsTimeChart(events: state.events, compact: true),
               const SizedBox(height: 12),
@@ -1139,21 +1217,6 @@ class _PatientDashboardScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  flex: 4,
-                  child: _calendarPlannerCard(state),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 6,
-                  child: _patientTodoCard(state),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
                   flex: 5,
                   child: _sensorImagePanel(state, backendStatus),
                 ),
@@ -1163,7 +1226,7 @@ class _PatientDashboardScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _cameraCapturePanel(),
+                      _cameraCapturePanel(state),
                       const SizedBox(height: 12),
                       RiskEventsTimeChart(
                         events: state.events,
@@ -1171,6 +1234,21 @@ class _PatientDashboardScreenState
                       ),
                     ],
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 4,
+                  child: _calendarPlannerCard(state),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 6,
+                  child: _patientTodoCard(state),
                 ),
               ],
             ),
@@ -1187,23 +1265,27 @@ class _PatientDashboardScreenState
 
   Widget _sensorImagePanel(
       PatientState state, BackendStatusState backendStatus) {
+    final strings = ref.watch(appStringsProvider);
     return SensorConnectionPanel(
       onSensorTap1: () => _showSensorSheet(
-        title: 'Sensor 1: Upper Arm Sensor',
+        title: strings.text('Sensor 1: Upper Arm Sensor'),
         connected: backendStatus.device1Connected,
-        batteryLevel: state.device1BatteryLevel,
+        batteryLevel: backendStatus.device1BatteryPercent,
       ),
       onSensorTap2: () => _showSensorSheet(
-        title: 'Sensor 2: Wrist Sensor',
+        title: strings.text('Sensor 2: Wrist Sensor'),
         connected: backendStatus.device2Connected,
-        batteryLevel: state.device2BatteryLevel,
+        batteryLevel: backendStatus.device2BatteryPercent,
       ),
       showContinueButton: false,
       showImage: true,
     );
   }
 
-  Widget _cameraCapturePanel() {
+  Widget _cameraCapturePanel(PatientState state) {
+    final strings = ref.watch(appStringsProvider);
+    _ensurePiccCycleLoaded(state);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1214,28 +1296,440 @@ class _PatientDashboardScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Daily PICC Site Check',
-            style: TextStyle(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFB9D3FF)),
+                ),
+                child: const Icon(
+                  Icons.add_photo_alternate_outlined,
+                  color: Color(0xFF0B63E5),
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      strings.text('PICC Length Tracker'),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF1A1F2D),
+                        fontSize: 17,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      strings.text(
+                        'Upload a site photo to compare visible line length across this dressing cycle.',
+                      ),
+                      style: const TextStyle(
+                        color: Color(0xFF667085),
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Center(
+            child: CameraButton(onImageTaken: _analyzePiccImage),
+          ),
+          if (_piccAnalyzing) ...[
+            const SizedBox(height: 14),
+            const LinearProgressIndicator(minHeight: 3),
+          ],
+          if (_baselinePiccLengthCm != null || _latestPiccLengthCm != null) ...[
+            const SizedBox(height: 14),
+            _piccLengthDashboard(),
+          ],
+          if (_piccAnalysisError != null) ...[
+            const SizedBox(height: 14),
+            _piccAnalysisErrorBox(_piccAnalysisError!),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _analyzePiccImage(XFile image) async {
+    setState(() {
+      _piccAnalyzing = true;
+      _piccAnalysisResult = null;
+      _piccAnalysisError = null;
+    });
+
+    try {
+      final result = await BackendService.analyzePiccImage(image);
+      final patientState = ref.read(patientStateWithEventsProvider);
+      final cycleKey = _dressingCycleKey(patientState.lastDressingChangeAt);
+      final now = DateTime.now();
+
+      if (!mounted) return;
+      setState(() {
+        _piccCycleKey = cycleKey;
+        _piccAnalysisResult = result;
+        _baselinePiccLengthCm ??= result.measurementCm;
+        _baselinePiccScannedAt ??= now;
+        _latestPiccLengthCm = result.measurementCm;
+        _latestPiccScannedAt = now;
+      });
+      await _savePiccCycle(cycleKey);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _piccAnalysisError = e.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _piccAnalyzing = false;
+        });
+      }
+    }
+  }
+
+  void _ensurePiccCycleLoaded(PatientState state) {
+    final key = _dressingCycleKey(state.lastDressingChangeAt);
+    if (_piccCycleKey == key || _piccCycleLoading) return;
+
+    _piccCycleLoading = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadPiccCycle(key);
+      if (!mounted) return;
+      setState(() {
+        _piccCycleKey = key;
+        _piccCycleLoading = false;
+      });
+    });
+  }
+
+  String _dressingCycleKey(DateTime? dressingDate) {
+    final date = dressingDate ?? DateTime(1970, 1, 1);
+    return DateFormat('yyyy-MM-dd').format(date);
+  }
+
+  String _piccPrefKey(String cycleKey, String field) {
+    final accountId =
+        ref.read(sessionControllerProvider).email?.toLowerCase() ?? 'default';
+    return 'picc_length_cycle.$accountId.$cycleKey.$field';
+  }
+
+  Future<void> _loadPiccCycle(String cycleKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    final baselineAt = prefs.getString(_piccPrefKey(cycleKey, 'baselineAt'));
+    final latestAt = prefs.getString(_piccPrefKey(cycleKey, 'latestAt'));
+
+    if (!mounted) return;
+    setState(() {
+      _baselinePiccLengthCm =
+          prefs.getDouble(_piccPrefKey(cycleKey, 'baselineLength'));
+      _latestPiccLengthCm =
+          prefs.getDouble(_piccPrefKey(cycleKey, 'latestLength'));
+      _baselinePiccScannedAt =
+          baselineAt == null ? null : DateTime.tryParse(baselineAt);
+      _latestPiccScannedAt =
+          latestAt == null ? null : DateTime.tryParse(latestAt);
+      _piccAnalysisResult = null;
+      _piccAnalysisError = null;
+    });
+  }
+
+  Future<void> _savePiccCycle(String cycleKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    final baseline = _baselinePiccLengthCm;
+    final latest = _latestPiccLengthCm;
+    final baselineAt = _baselinePiccScannedAt;
+    final latestAt = _latestPiccScannedAt;
+
+    if (baseline != null) {
+      await prefs.setDouble(_piccPrefKey(cycleKey, 'baselineLength'), baseline);
+    }
+    if (latest != null) {
+      await prefs.setDouble(_piccPrefKey(cycleKey, 'latestLength'), latest);
+    }
+    if (baselineAt != null) {
+      await prefs.setString(
+          _piccPrefKey(cycleKey, 'baselineAt'), baselineAt.toIso8601String());
+    }
+    if (latestAt != null) {
+      await prefs.setString(
+          _piccPrefKey(cycleKey, 'latestAt'), latestAt.toIso8601String());
+    }
+  }
+
+  Widget _piccLengthDashboard() {
+    final strings = ref.watch(appStringsProvider);
+    final baseline = _baselinePiccLengthCm;
+    final latest = _latestPiccLengthCm ?? baseline;
+    final difference =
+        baseline == null || latest == null ? null : latest - baseline;
+    final isWarning = difference != null && difference.abs() > 2.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _piccMetricCard(
+              title: strings.text('Today\'s Length'),
+              value: latest == null ? '--' : latest.toStringAsFixed(2),
+              suffix: 'cm',
+              caption: strings.text('Scanned on'),
+              date: _latestPiccScannedAt,
+              icon: Icons.fit_screen_outlined,
+              color: const Color(0xFF0B63E5),
+              background: const Color(0xFFF3F7FF),
+              border: const Color(0xFFB9D3FF),
+            ),
+            _piccMetricCard(
+              title: strings.text('Baseline Length'),
+              value: baseline == null ? '--' : baseline.toStringAsFixed(2),
+              suffix: 'cm',
+              caption: strings.text('First scan'),
+              date: _baselinePiccScannedAt,
+              icon: Icons.verified_rounded,
+              color: const Color(0xFF087454),
+              background: const Color(0xFFF0FAF6),
+              border: const Color(0xFFB8E4D2),
+            ),
+            _piccMetricCard(
+              title: strings.text('Length Difference'),
+              value: difference == null
+                  ? '--'
+                  : '${difference >= 0 ? '+' : ''}${difference.toStringAsFixed(2)}',
+              suffix: 'cm',
+              caption: strings.text('Latest - baseline'),
+              icon: Icons.trending_up_rounded,
+              color: const Color(0xFF6D35D4),
+              background: const Color(0xFFF7F2FF),
+              border: const Color(0xFFD8C7FF),
+            ),
+            _piccStatusCard(isWarning: isWarning, difference: difference),
+          ],
+        ),
+        if (_piccAnalysisResult != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            'PICC pixels: ${_piccAnalysisResult!.piccPixels.toStringAsFixed(1)} | Mark spacing: ${_piccAnalysisResult!.markDistancePixels.toStringAsFixed(1)} px',
+            style: const TextStyle(color: Color(0xFF667085), fontSize: 12),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _piccMetricCard({
+    required String title,
+    required String value,
+    required String suffix,
+    required String caption,
+    DateTime? date,
+    required IconData icon,
+    required Color color,
+    required Color background,
+    required Color border,
+  }) {
+    return Container(
+      width: 180,
+      constraints: const BoxConstraints(minHeight: 120),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF1D2738),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              Icon(icon, color: color, size: 24),
+            ],
+          ),
+          const SizedBox(height: 8),
+          RichText(
+            text: TextSpan(
+              text: value,
+              style: TextStyle(
+                color: color,
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+              ),
+              children: [
+                TextSpan(
+                  text: ' $suffix',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            caption,
+            style: const TextStyle(
+              color: Color(0xFF3B4A66),
+              fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF1A1F2D),
-              fontSize: 15,
+            ),
+          ),
+          if (date != null) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.calendar_month_outlined, color: color, size: 14),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    DateFormat('dd MMM yyyy  hh:mm a').format(date),
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF1F2A44),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _piccStatusCard(
+      {required bool isWarning, required double? difference}) {
+    final strings = ref.watch(appStringsProvider);
+    final color = isWarning ? const Color(0xFFD92D20) : const Color(0xFF087454);
+    return Container(
+      width: 200,
+      constraints: const BoxConstraints(minHeight: 120),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isWarning ? const Color(0xFFFFF4ED) : const Color(0xFFEFFAF6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isWarning ? const Color(0xFFFFD0B5) : const Color(0xFFB8E4D2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  strings.text('Status'),
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              Icon(
+                isWarning ? Icons.warning_rounded : Icons.check_circle_rounded,
+                color: color,
+                size: 28,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isWarning
+                ? strings.text('POSSIBLE PICC DISLODGEMENT DETECTED')
+                : strings.text('PICC LENGTH STABLE'),
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              height: 1.12,
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Take a quick daily PICC site photo to help track healing and monitor possible catheter movement.',
-            style: TextStyle(
-              color: Color(0xFF667085),
-              fontSize: 13,
-              height: 1.35,
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              isWarning
+                  ? strings.text(
+                      'Difference is greater than 2.0 cm. Please contact your healthcare provider.',
+                    )
+                  : difference == null
+                      ? strings.text(
+                          'Upload a photo to begin tracking this dressing cycle.',
+                        )
+                      : strings.text(
+                          'Difference is within the expected range for this dressing cycle.',
+                        ),
+              style: TextStyle(
+                color: isWarning
+                    ? const Color(0xFF7A271A)
+                    : const Color(0xFF064E3B),
+                fontSize: 12,
+                height: 1.25,
+              ),
             ),
           ),
-          const SizedBox(height: 14),
-          const Center(
-            child: CameraButton(),
-          ),
         ],
+      ),
+    );
+  }
+
+  Widget _piccAnalysisErrorBox(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4ED),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFD0B5)),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(
+          color: Color(0xFFB54708),
+          fontSize: 13,
+          height: 1.35,
+        ),
       ),
     );
   }
@@ -1245,6 +1739,7 @@ class _PatientDashboardScreenState
     required bool connected,
     required int? batteryLevel,
   }) async {
+    final strings = ref.read(appStringsProvider);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1263,11 +1758,13 @@ class _PatientDashboardScreenState
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Text('Status:',
-                      style: TextStyle(color: Color(0xFF667085))),
+                  Text(strings.text('Status:'),
+                      style: const TextStyle(color: Color(0xFF667085))),
                   const SizedBox(width: 8),
                   Text(
-                    connected ? 'Connected' : 'Disconnected',
+                    connected
+                        ? strings.text('Connected')
+                        : strings.text('Disconnected'),
                     style: TextStyle(
                       color: connected
                           ? const Color(0xFF20B26C)
@@ -1280,19 +1777,21 @@ class _PatientDashboardScreenState
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Text('Battery:',
-                      style: TextStyle(color: Color(0xFF667085))),
+                  Text(strings.text('Battery:'),
+                      style: const TextStyle(color: Color(0xFF667085))),
                   const SizedBox(width: 8),
                   Text(
-                    batteryLevel != null ? '$batteryLevel%' : 'Not exposed',
+                    batteryLevel != null
+                        ? '$batteryLevel%'
+                        : strings.text('Not exposed'),
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Connection status is managed by the backend.',
-                style: TextStyle(color: Color(0xFF667085)),
+              Text(
+                strings.text('Connection status is managed by the backend.'),
+                style: const TextStyle(color: Color(0xFF667085)),
               ),
             ],
           ),
@@ -1302,6 +1801,8 @@ class _PatientDashboardScreenState
   }
 
   Widget _topSummary(PatientState state, [String? latestTimestamp]) {
+    final strings = ref.watch(appStringsProvider);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1316,7 +1817,7 @@ class _PatientDashboardScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Patient: ${state.patientName}',
+            '${strings.text('Patient')}: ${state.patientName}',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -1324,20 +1825,23 @@ class _PatientDashboardScreenState
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
-            'PICC Arm Status: Stable',
-            style: TextStyle(
+          Text(
+            strings.text('PICC Arm Status: Stable'),
+            style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,
               fontSize: 23,
             ),
           ),
           const SizedBox(height: 8),
-          if (latestTimestamp != null) _metric('Latest Event', latestTimestamp),
+          if (latestTimestamp != null)
+            _metric(strings.text('Latest Event'), latestTimestamp),
           const SizedBox(height: 8),
-          const Text(
-            'Your monitoring is active and your care routine is on track today.',
-            style: TextStyle(
+          Text(
+            strings.text(
+              'Your monitoring is active and your care routine is on track today.',
+            ),
+            style: const TextStyle(
               color: Color(0xFFEAF7FF),
               fontWeight: FontWeight.w500,
             ),
@@ -1349,9 +1853,11 @@ class _PatientDashboardScreenState
               color: Colors.white.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Text(
-              'Friendly tip: keep your PICC arm movements smooth and relaxed.',
-              style: TextStyle(
+            child: Text(
+              strings.text(
+                'Friendly tip: keep your PICC arm movements smooth and relaxed.',
+              ),
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
               ),
@@ -1385,6 +1891,7 @@ class _PatientDashboardScreenState
   }
 
   Widget _backendNoticeBanner(BackendStatusState backendStatus) {
+    final strings = ref.watch(appStringsProvider);
     final backendReady = backendStatus.backendReady;
     final backgroundColor =
         backendReady ? const Color(0xFFEAF7F1) : const Color(0xFFF6F8FB);
@@ -1394,8 +1901,12 @@ class _PatientDashboardScreenState
         backendReady ? const Color(0xFF0F7B6C) : const Color(0xFF5F6C7B);
 
     final message = backendReady
-        ? 'Monitoring services are ready. Use the Wearable Sensors panel to connect or pause monitoring.'
-        : 'Monitoring services are not ready yet. The app will reconnect when the backend is available.';
+        ? strings.text(
+            'Monitoring services are ready. Use the Wearable Sensors panel to connect or pause monitoring.',
+          )
+        : strings.text(
+            'Monitoring services are not ready yet. The app will reconnect when the backend is available.',
+          );
 
     return Container(
       width: double.infinity,
@@ -1447,6 +1958,7 @@ class _PatientDashboardScreenState
   }
 
   Widget _ringMetrics(PatientState state, BackendStatusState backendStatus) {
+    final strings = ref.watch(appStringsProvider);
     final connectedCount = backendStatus.connectedCount;
     final riskScore = switch (state.riskLevel) {
       RiskLevel.low => 1,
@@ -1466,8 +1978,8 @@ class _PatientDashboardScreenState
           Expanded(
             child: _ringMetricItem(
               valueText: '${state.dailyEventCount}',
-              unitText: 'events',
-              label: 'Today\'s Movement Count',
+              unitText: strings.text('events'),
+              label: strings.text('Today\'s Movement Count'),
               progress: (state.dailyEventCount / 10).clamp(0.0, 1.0),
               color: const Color(0xFFE9818C),
             ),
@@ -1476,7 +1988,7 @@ class _PatientDashboardScreenState
             child: _ringMetricItem(
               valueText: '$connectedCount',
               unitText: '/2',
-              label: 'Sensors Connected',
+              label: strings.text('Sensors Connected'),
               progress: connectedCount / 2,
               color: const Color(0xFF8CCF2F),
             ),
@@ -1485,7 +1997,7 @@ class _PatientDashboardScreenState
             child: _ringMetricItem(
               valueText: '$riskScore',
               unitText: '/3',
-              label: 'Care Attention Level',
+              label: strings.text('Care Attention Level'),
               progress: riskScore / 3,
               color: const Color(0xFFC7B3F2),
             ),

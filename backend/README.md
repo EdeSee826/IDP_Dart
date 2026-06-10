@@ -17,8 +17,6 @@ cd backend
 pip install -r requirements-flask.txt
 ```
 
-If you already have the generated environment, you can also reuse the existing `requirements.txt` file. The smaller `requirements-flask.txt` file is the safer setup path for a clean install.
-
 3. Add your ML model files to this directory:
    - `svm_rfe_model (1).pkl`
    - `scaler (1).pkl`
@@ -50,6 +48,10 @@ You can also run the app directly with `python app.py`, but `run.py` keeps the F
 ## Database
 
 The backend automatically creates `risky_events.db` in the backend directory.
+
+The same SQLite database stores patient accounts using hashed passwords. Account
+email addresses are used as the subject identifier for calibration baselines,
+risky events, and other patient-specific records.
 
 Only risky events (when `risky_counter >= RISKY_CONFIRM_WINDOWS`) are saved to the database:
 - `id` - Event ID

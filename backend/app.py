@@ -9,37 +9,137 @@ import os
 import sqlite3
 import threading
 import signal
-import importlib
+import importlib.util
+import secrets
+import tempfile
+from pathlib import Path
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 CORS(app)
 
 # Database configuration
-DB_PATH = "risky_events.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
+DB_PATH = os.path.join(BASE_DIR, "risky_events.db")
 RETENTION_DAYS = 7
 
 # Background thread management
 ml_thread = None
 ml_thread_stop_event = threading.Event()
+picc2_module = None
+imu_module = None
+caregiver_sessions = {}
 
 
-def get_ml_backend():
-    return importlib.import_module("ml_backend")
+def get_imu_interpretation_code_with_functional_validation():
+    return get_imu_backend()
+
+
+def get_picc2_backend():
+    global picc2_module
+    if picc2_module is not None:
+        return picc2_module
+
+    module_path = os.path.join(REPO_ROOT, "picc2.py")
+
+    if not os.path.exists(module_path):
+        raise FileNotFoundError("picc2.py was not found in the repository root")
+
+    spec = importlib.util.spec_from_file_location("picc2_backend", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("Unable to load picc2 backend module")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    picc2_module = module
+    return picc2_module
+
+
+def get_imu_backend():
+    global imu_module
+    if imu_module is not None:
+        return imu_module
+
+    module_path = os.path.join(
+        os.path.dirname(__file__),
+        "imu_interpretation_code_with_functional_validation.py",
+    )
+    spec = importlib.util.spec_from_file_location("imu_interpretation", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError("Unable to load IMU backend module")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    imu_module = module
+    return imu_module
+
+
+def get_battery_status():
+    try:
+        module = get_imu_backend()
+        return module.get_battery_snapshot()
+    except Exception:
+        return {
+            "sensor1": {
+                "raw_adc": None,
+                "voltage": None,
+                "battery_percent": None,
+                "last_updated": None,
+                "connected": False,
+            },
+            "sensor2": {
+                "raw_adc": None,
+                "voltage": None,
+                "battery_percent": None,
+                "last_updated": None,
+                "connected": False,
+            },
+        }
+
+
+def get_static_placement_status():
+    """Attempt to read static placement validation from the IMU interpretation module if present."""
+    try:
+        module = get_imu_backend()
+
+        # Read validation_results and neutral_vectors if available
+        static_results = {}
+        vr = getattr(module, "validation_results", None)
+        nv = getattr(module, "neutral_vectors", None)
+        if vr is None:
+            return None
+
+        for name in vr:
+            entry = vr.get(name)
+            if entry is None:
+                static_results[name] = {"passed": None, "interpretation": None}
+            else:
+                static_results[name] = {
+                    "passed": bool(entry.get("passed")),
+                    "angle_passed": entry.get("angle_passed"),
+                    "marker_down": entry.get("marker_down"),
+                    "interpretation": entry.get("interpretation"),
+                }
+
+        return static_results
+    except Exception:
+        return None
 
 
 def set_backend_session_active(active):
     """Sync Flask and ML backend session state."""
-    ml_backend = get_ml_backend()
-    ml_backend.SESSION_ACTIVE = active
-    
+    imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+    imu_interpretation.SESSION_ACTIVE = active
+
     if not active:
         # Signal disconnect event to gracefully stop BLE
-        if getattr(ml_backend, "disconnect_event", None) is not None:
+        if getattr(imu_interpretation, "disconnect_event", None) is not None:
             try:
-                ml_backend.disconnect_event.set()
+                imu_interpretation.disconnect_event.set()
             except Exception:
                 pass
 
@@ -48,21 +148,141 @@ def set_backend_session_active(active):
 # DATABASE INITIALIZATION
 # ============================================================
 def init_database():
-    """Create risky_events table if it doesn't exist"""
+    """Create account and patient-data tables if they do not exist."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS accounts (
+            email TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            onboarding_completed INTEGER NOT NULL DEFAULT 0,
+            baseline_completed INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS risky_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id TEXT NOT NULL DEFAULT 'legacy',
             event_type TEXT NOT NULL,
             timestamp TEXT NOT NULL,
             risk_level TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS family_access_permissions (
+            owner_email TEXT PRIMARY KEY,
+            family_email TEXT,
+            token_hash TEXT,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (owner_email) REFERENCES accounts(email)
+        )
+    """)
+    columns = {
+        row[1] for row in cursor.execute("PRAGMA table_info(risky_events)").fetchall()
+    }
+    if "account_id" not in columns:
+        cursor.execute(
+            "ALTER TABLE risky_events ADD COLUMN account_id TEXT NOT NULL DEFAULT 'legacy'"
+        )
+    family_columns = {
+        row[1]
+        for row in cursor.execute(
+            "PRAGMA table_info(family_access_permissions)"
+        ).fetchall()
+    }
+    if "token_hash" not in family_columns:
+        cursor.execute(
+            "ALTER TABLE family_access_permissions ADD COLUMN token_hash TEXT"
+        )
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_risky_events_account_timestamp
+        ON risky_events (account_id, timestamp)
+    """)
     conn.commit()
     conn.close()
     cleanup_old_risky_events()
+
+
+def normalize_email(value):
+    return str(value or "").strip().lower()
+
+
+def account_payload(row):
+    return {
+        "email": row[0],
+        "name": row[1],
+        "onboarding_completed": bool(row[2]),
+        "baseline_completed": bool(row[3]),
+    }
+
+
+def risk_level_for_event_count(count):
+    if count > 50:
+        return "high"
+    if count > 20:
+        return "medium"
+    return "low"
+
+
+def family_patient_summaries(conn, family_email, owner_email=None):
+    owner_filter = " AND p.owner_email = ?" if owner_email else ""
+    parameters = (family_email, owner_email) if owner_email else (family_email,)
+    patients = conn.execute(
+        f"""
+        SELECT a.email, a.name
+        FROM family_access_permissions p
+        JOIN accounts a ON a.email = p.owner_email
+        WHERE p.enabled = 1 AND p.family_email = ?
+        {owner_filter}
+        ORDER BY a.name COLLATE NOCASE, a.email
+        """,
+        parameters,
+    ).fetchall()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    summaries = []
+    for patient_email, patient_name in patients:
+        rows = conn.execute(
+            """
+            SELECT id, event_type, timestamp, risk_level
+            FROM risky_events
+            WHERE account_id = ? AND timestamp >= ?
+            ORDER BY timestamp DESC
+            """,
+            (patient_email, cutoff),
+        ).fetchall()
+        events = [
+            {
+                "id": row[0],
+                "event_type": row[1],
+                "timestamp": row[2],
+                "risk_level": row[3],
+            }
+            for row in rows
+        ]
+        today_events = [
+            event for event in events if event["timestamp"].startswith(today)
+        ]
+        summaries.append(
+            {
+                "email": patient_email,
+                "name": patient_name,
+                "today_event_count": len(today_events),
+                "weekly_event_count": len(events),
+                "risk_level": risk_level_for_event_count(len(today_events)),
+                "latest_event": events[0] if events else None,
+                "events": events,
+            }
+        )
+    return summaries
 
 
 def cleanup_old_risky_events():
@@ -76,7 +296,7 @@ def cleanup_old_risky_events():
     conn.close()
 
 
-def fetch_risky_events_today():
+def fetch_risky_events_today(account_id):
     """Fetch all risky events from today"""
     today = datetime.now().strftime("%Y-%m-%d")
     
@@ -85,9 +305,9 @@ def fetch_risky_events_today():
     cursor.execute("""
         SELECT id, event_type, timestamp, risk_level
         FROM risky_events
-        WHERE timestamp LIKE ?
+        WHERE account_id = ? AND timestamp LIKE ?
         ORDER BY timestamp DESC
-    """, (f"{today}%",))
+    """, (account_id, f"{today}%"))
     
     rows = cursor.fetchall()
     conn.close()
@@ -105,7 +325,7 @@ def fetch_risky_events_today():
     return events
 
 
-def fetch_all_risky_events():
+def fetch_all_risky_events(account_id):
     """Fetch all risky events"""
     cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -114,9 +334,9 @@ def fetch_all_risky_events():
     cursor.execute("""
         SELECT id, event_type, timestamp, risk_level
         FROM risky_events
-        WHERE timestamp >= ?
+        WHERE account_id = ? AND timestamp >= ?
         ORDER BY timestamp DESC
-    """, (cutoff,))
+    """, (account_id, cutoff))
     
     rows = cursor.fetchall()
     conn.close()
@@ -178,12 +398,280 @@ def health():
     return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
 
 
+@app.route("/api/accounts/register", methods=["POST"])
+def register_account():
+    body = request.get_json(silent=True) or {}
+    name = str(body.get("name") or "").strip()
+    email = normalize_email(body.get("email"))
+    password = str(body.get("password") or "")
+
+    if not name or not email or "@" not in email or len(password) < 6:
+        return jsonify({"error": "Valid name, email, and password are required"}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            INSERT INTO accounts (email, name, password_hash)
+            VALUES (?, ?, ?)
+            """,
+            (email, name, generate_password_hash(password)),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "An account with this email already exists"}), 409
+    finally:
+        conn.close()
+
+    return jsonify({
+        "account": {
+            "email": email,
+            "name": name,
+            "onboarding_completed": False,
+            "baseline_completed": False,
+        }
+    }), 201
+
+
+@app.route("/api/accounts/login", methods=["POST"])
+def login_account():
+    body = request.get_json(silent=True) or {}
+    email = normalize_email(body.get("email"))
+    password = str(body.get("password") or "")
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            """
+            SELECT email, name, onboarding_completed, baseline_completed,
+                   password_hash
+            FROM accounts
+            WHERE email = ?
+            """,
+            (email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return jsonify({"error": "Account not found. Please create an account first."}), 404
+    if not check_password_hash(row[4], password):
+        return jsonify({"error": "Incorrect password"}), 401
+
+    return jsonify({"account": account_payload(row)}), 200
+
+
+@app.route("/api/accounts/state", methods=["PATCH"])
+def update_account_state():
+    body = request.get_json(silent=True) or {}
+    email = normalize_email(body.get("email"))
+    if not email:
+        return jsonify({"error": "Account email is required"}), 400
+
+    updates = []
+    values = []
+    if "name" in body and str(body["name"]).strip():
+        updates.append("name = ?")
+        values.append(str(body["name"]).strip())
+    if "onboarding_completed" in body:
+        updates.append("onboarding_completed = ?")
+        values.append(int(bool(body["onboarding_completed"])))
+    if "baseline_completed" in body:
+        updates.append("baseline_completed = ?")
+        values.append(int(bool(body["baseline_completed"])))
+    if not updates:
+        return jsonify({"error": "No account fields were provided"}), 400
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(email)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.execute(
+            f"UPDATE accounts SET {', '.join(updates)} WHERE email = ?",
+            values,
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Account not found"}), 404
+        row = conn.execute(
+            """
+            SELECT email, name, onboarding_completed, baseline_completed
+            FROM accounts WHERE email = ?
+            """,
+            (email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    return jsonify({"account": account_payload(row)}), 200
+
+
+@app.route("/api/accounts/privacy", methods=["GET"])
+def get_account_privacy():
+    owner_email = normalize_email(request.args.get("email"))
+    if not owner_email:
+        return jsonify({"error": "Account email is required"}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        account_exists = conn.execute(
+            "SELECT 1 FROM accounts WHERE email = ?",
+            (owner_email,),
+        ).fetchone()
+        if account_exists is None:
+            return jsonify({"error": "Account not found"}), 404
+        row = conn.execute(
+            """
+            SELECT enabled, family_email
+            FROM family_access_permissions
+            WHERE owner_email = ?
+            """,
+            (owner_email,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    return jsonify({
+        "family_access_enabled": bool(row[0]) if row else False,
+        "family_email": row[1] if row else None,
+    }), 200
+
+
+@app.route("/api/accounts/privacy", methods=["PUT"])
+def update_account_privacy():
+    body = request.get_json(silent=True) or {}
+    owner_email = normalize_email(body.get("email"))
+    enabled = bool(body.get("family_access_enabled", False))
+    family_email = normalize_email(body.get("family_email"))
+
+    if not owner_email:
+        return jsonify({"error": "Account email is required"}), 400
+    if enabled and (not family_email or "@" not in family_email):
+        return jsonify({"error": "A valid family email address is required"}), 400
+    if enabled and family_email == owner_email:
+        return jsonify({"error": "Family email must be different from your email"}), 400
+
+    invitation_token = secrets.token_urlsafe(9) if enabled else None
+    token_hash = generate_password_hash(invitation_token) if enabled else None
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        account_exists = conn.execute(
+            "SELECT 1 FROM accounts WHERE email = ?",
+            (owner_email,),
+        ).fetchone()
+        if account_exists is None:
+            return jsonify({"error": "Account not found"}), 404
+        conn.execute(
+            """
+            INSERT INTO family_access_permissions (
+                owner_email, family_email, token_hash, enabled, updated_at
+            ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(owner_email) DO UPDATE SET
+                family_email = excluded.family_email,
+                token_hash = excluded.token_hash,
+                enabled = excluded.enabled,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                owner_email,
+                family_email if enabled else None,
+                token_hash,
+                int(enabled),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        "family_access_enabled": enabled,
+        "family_email": family_email if enabled else None,
+        "invitation_token": invitation_token,
+    }), 200
+
+
+@app.route("/api/family/login", methods=["POST"])
+def login_family_caregiver():
+    body = request.get_json(silent=True) or {}
+    email = normalize_email(body.get("email"))
+    invitation_token = str(body.get("token") or "").strip()
+    if not email or not invitation_token:
+        return jsonify({"error": "Caregiver email and token are required"}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        permissions = conn.execute(
+            """
+            SELECT owner_email, token_hash
+            FROM family_access_permissions
+            WHERE family_email = ? AND enabled = 1
+            """,
+            (email,),
+        ).fetchall()
+        owner_email = next(
+            (
+                row[0]
+                for row in permissions
+                if row[1] and check_password_hash(row[1], invitation_token)
+            ),
+            None,
+        )
+        if owner_email is None:
+            return jsonify({"error": "Invalid caregiver email or token"}), 401
+        patients = family_patient_summaries(conn, email, owner_email)
+    finally:
+        conn.close()
+
+    access_token = secrets.token_urlsafe(32)
+    caregiver_sessions[access_token] = {
+        "email": email,
+        "owner_email": owner_email,
+    }
+
+    return jsonify({
+        "account": {
+            "email": email,
+            "name": "Family Caregiver",
+            "onboarding_completed": True,
+            "baseline_completed": False,
+        },
+        "patients": patients,
+        "access_token": access_token,
+    }), 200
+
+
+@app.route("/api/family/dashboard", methods=["GET"])
+def get_family_dashboard():
+    caregiver_email = normalize_email(request.args.get("email"))
+    if not caregiver_email:
+        return jsonify({"error": "Caregiver email is required"}), 400
+    authorization = request.headers.get("Authorization", "")
+    access_token = authorization.removeprefix("Bearer ").strip()
+    caregiver_session = caregiver_sessions.get(access_token)
+    if not caregiver_session or caregiver_session["email"] != caregiver_email:
+        return jsonify({"error": "Caregiver session is invalid or expired"}), 401
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        patients = family_patient_summaries(
+            conn,
+            caregiver_email,
+            caregiver_session["owner_email"],
+        )
+    finally:
+        conn.close()
+
+    return jsonify({"patients": patients}), 200
+
+
 @app.route("/api/status", methods=["GET"])
 def status():
     """Return backend streaming and device connection status"""
     try:
-        ml_backend = get_ml_backend()
-        runtime_status = ml_backend.get_runtime_status()
+        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        runtime_status = imu_interpretation.get_runtime_status()
+        battery_status = get_battery_status()
+        static_status = get_static_placement_status()
         return jsonify(
             {
                 "backend_ready": True,
@@ -192,6 +680,12 @@ def status():
                 "connected_count": runtime_status["connected_count"],
                 "error_message": runtime_status.get("error_message"),
                 "devices": runtime_status["devices"],
+                "calibration_phase": runtime_status.get("calibration_phase"),
+                "calibration_message": runtime_status.get("calibration_message"),
+                "calibration_remaining_seconds": runtime_status.get("calibration_remaining_seconds"),
+                "calibration_validation": runtime_status.get("calibration_validation"),
+                "battery": battery_status,
+                "static_placement": static_status,
                 "timestamp": datetime.now().isoformat()
             }
         ), 200
@@ -206,6 +700,8 @@ def status():
                     {"name": "XIAO_MG24_Sensor_01", "connected": False},
                     {"name": "XIAO_MG24_Sensor_02", "connected": False},
                 ],
+                "battery": get_battery_status(),
+                "static_placement": None,
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }
@@ -220,32 +716,48 @@ def status():
 def start_stream():
     """Start BLE streaming and ML prediction in background"""
     global ml_thread
-    ml_backend = get_ml_backend()
+    imu_interpretation_code_with_functional_validation = get_imu_interpretation_code_with_functional_validation()
     
-    if ml_backend.SESSION_ACTIVE:
+    if imu_interpretation_code_with_functional_validation.SESSION_ACTIVE:
         return jsonify({"error": "Session already active"}), 400
+
+    bleak_error = getattr(imu_interpretation_code_with_functional_validation, "BLEAK_IMPORT_ERROR", None)
+    if bleak_error is not None:
+        return jsonify({
+            "error": "Missing Python dependency 'bleak'",
+            "details": "Install backend dependencies with: pip install -r requirements-flask.txt"
+        }), 500
 
     # Check for required ML model files
     try:
         required_files = ["scaler (1).pkl", "svm_rfe_model (1).pkl"]
         missing_files = [
             filename for filename in required_files 
-            if ml_backend.resolve_model_file(filename) is None
+            if imu_interpretation_code_with_functional_validation.resolve_model_file(filename) is None
         ]
         if missing_files:
             return jsonify({
-                "error": "Missing ML model files",
+                "error": "Missing IMU interpretation model files",
                 "missing_files": missing_files
             }), 400
     except Exception as e:
         return jsonify({"error": f"Model check failed: {str(e)}"}), 500
     
     # Mark session as active and start background thread
+    body = request.get_json(silent=True) or {}
+    imu_interpretation_code_with_functional_validation.LAST_ERROR = None
+    imu_interpretation_code_with_functional_validation.CALIBRATION_PHASE = "connecting"
+    imu_interpretation_code_with_functional_validation.CALIBRATION_MESSAGE = "Searching for both wearable sensors."
+    imu_interpretation_code_with_functional_validation.CALIBRATION_DEADLINE = None
+    imu_interpretation_code_with_functional_validation.CALIBRATION_RETRY_REQUESTED = False
+    account_id = str(body.get("account_id") or "default").strip().lower()
+    imu_interpretation_code_with_functional_validation.CALIBRATION_ACCOUNT_ID = account_id
+    imu_interpretation_code_with_functional_validation.CALIBRATION_ENROLL_BASELINE = bool(body.get("enroll_baseline", False))
     set_backend_session_active(True)
     
     try:
         ml_thread_stop_event.clear()
-        ml_thread = threading.Thread(target=run_ml_backend, daemon=True)
+        ml_thread = threading.Thread(target=run_imu_interpretation_code_with_functional_validation, daemon=True)
         ml_thread.start()
         
         return jsonify({
@@ -259,10 +771,10 @@ def start_stream():
 
 @app.route("/api/stop", methods=["POST"])
 def stop_stream():
-    """Stop BLE streaming and ML prediction"""
-    ml_backend = get_ml_backend()
+    """Stop BLE streaming and IMU interpretation"""
+    imu_interpretation = get_imu_interpretation_code_with_functional_validation()
     
-    if not ml_backend.SESSION_ACTIVE:
+    if not imu_interpretation.SESSION_ACTIVE:
         return jsonify({"error": "No active session"}), 400
     
     try:
@@ -281,6 +793,23 @@ def stop_stream():
         return jsonify({"error": f"Failed to stop stream: {str(e)}"}), 500
 
 
+@app.route("/api/calibration/retry", methods=["POST"])
+def retry_calibration():
+    """Continue calibration after the patient acknowledges guidance."""
+    try:
+        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        if not imu_interpretation.SESSION_ACTIVE:
+            return jsonify({"error": "No active sensor session"}), 400
+        if not imu_interpretation.request_calibration_retry():
+            return jsonify({"error": "Calibration is not waiting for acknowledgement"}), 409
+        return jsonify({
+            "status": "calibration_retry_requested",
+            "timestamp": datetime.now().isoformat(),
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to retry calibration: {str(e)}"}), 500
+
+
 # ============================================================
 # API ENDPOINTS - Event Retrieval
 # ============================================================
@@ -289,7 +818,8 @@ def stop_stream():
 def get_events_today():
     """Fetch risky events from today"""
     try:
-        events = fetch_risky_events_today()
+        account_id = request.args.get("account_id", "default").strip().lower()
+        events = fetch_risky_events_today(account_id)
         return jsonify({
             "events": events,
             "grouped_events": group_events_by_day(events),
@@ -304,7 +834,8 @@ def get_events_today():
 def get_all_events():
     """Fetch all risky events"""
     try:
-        events = fetch_all_risky_events()
+        account_id = request.args.get("account_id", "default").strip().lower()
+        events = fetch_all_risky_events(account_id)
         return jsonify({
             "events": events,
             "grouped_events": group_events_by_day(events),
@@ -321,7 +852,8 @@ def clear_events():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM risky_events")
+        account_id = request.args.get("account_id", "default").strip().lower()
+        cursor.execute("DELETE FROM risky_events WHERE account_id = ?", (account_id,))
         conn.commit()
         conn.close()
         
@@ -352,7 +884,7 @@ def sync_appointment_to_teams():
     }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         title = data.get("title", "Medical Appointment")
         start_time = data.get("start_time")
         location = data.get("location", "")
@@ -362,7 +894,7 @@ def sync_appointment_to_teams():
         
         # TODO: Implement actual Teams Graph API integration
         # This is a placeholder that logs the appointment
-        print(f"[APPOINTMENT] Title: {title}, Time: {start_time}, Location: {location}")
+        app.logger.info(f"[APPOINTMENT] Title: {title}, Time: {start_time}, Location: {location}")
         
         return jsonify({
             "status": "appointment_sync_queued",
@@ -378,25 +910,72 @@ def sync_appointment_to_teams():
         return jsonify({"error": f"Failed to sync appointment: {str(e)}"}), 500
 
 
+@app.route("/api/picc/analyze", methods=["POST"])
+def analyze_picc_image():
+    """Analyze an uploaded PICC image and return the measured line length."""
+    uploaded_image = request.files.get("image")
+    if uploaded_image is None or uploaded_image.filename == "":
+        return jsonify({"error": "image file is required"}), 400
+
+    suffix = Path(uploaded_image.filename).suffix or ".jpg"
+    temp_path = None
+
+    try:
+        model_path = os.path.join(REPO_ROOT, "best.pt")
+        if not os.path.exists(model_path):
+            return jsonify({
+                "status": "error",
+                "error": "Missing PICC YOLO model file: best.pt"
+            }), 500
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_path = temp_file.name
+            uploaded_image.save(temp_path)
+
+        picc2 = get_picc2_backend()
+        result = picc2.analyze_image(temp_path)
+
+        return jsonify(
+            {
+                "status": "ok",
+                "measurement_cm": result["external_length_cm"],
+                "picc_pixels": result["picc_pixels"],
+                "mark_distance_pixels": result["mark_distance_pixels"],
+                "timestamp": datetime.now().isoformat(),
+            }
+        ), 200
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+
 # ============================================================
 # BACKGROUND ML/BLE RUNNER
 # ============================================================
 
-def run_ml_backend():
+def run_imu_interpretation_code_with_functional_validation():
     """
-    Run the ML backend in a separate thread.
-    Manages BLE connections, sensor streaming, and ML predictions.
+    Run the IMU interpretation code with functional validation in a separate thread.
+    Manages BLE connections, sensor streaming, and IMU predictions.
     """
     try:
-        ml_backend = get_ml_backend()
-        print("[Flask] Starting ML backend thread...")
-        # Run the async ML loop
-        asyncio.run(ml_backend.main())
+        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        app.logger.info("[Flask] Starting IMU interpretation thread...")
+        # Run the async IMU interpretation loop
+        asyncio.run(imu_interpretation.main())
     except Exception as e:
-        print(f"[Flask] ML Backend Error: {e}")
-        ml_backend.LAST_ERROR = str(e)
+        app.logger.exception("[Flask] IMU Interpretation Error")
+        imu_interpretation.LAST_ERROR = str(e)
+        imu_interpretation.CALIBRATION_PHASE = "error"
+        imu_interpretation.CALIBRATION_MESSAGE = str(e)
+        imu_interpretation.CALIBRATION_DEADLINE = None
     finally:
-        print("[Flask] ML backend thread shutting down...")
+        app.logger.info("[Flask] IMU interpretation thread shutting down...")
         set_backend_session_active(False)
 
 
@@ -406,11 +985,11 @@ def run_ml_backend():
 
 def handle_shutdown(signum, frame):
     """Handle shutdown signals"""
-    print("[Flask] Shutdown signal received, cleaning up...")
+    app.logger.info("[Flask] Shutdown signal received, cleaning up...")
     set_backend_session_active(False)
     if ml_thread is not None and ml_thread.is_alive():
         ml_thread.join(timeout=5)
-    print("[Flask] Shutdown complete")
+    app.logger.info("[Flask] Shutdown complete")
 
 
 # ============================================================
@@ -421,27 +1000,27 @@ if __name__ == "__main__":
     try:
         # Initialize database
         init_database()
-        print("[Flask] Database initialized")
+        app.logger.info("[Flask] Database initialized")
         
         # Load ML models once on startup
         try:
-            ml_backend = get_ml_backend()
-            ml_backend.load_ml_objects()
-            print("[Flask] ML models loaded successfully")
+            imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+            imu_interpretation.load_ml_objects()
+            app.logger.info("[Flask] IMU interpretation models loaded successfully")
         except Exception as e:
-            print(f"[Flask] Warning: Could not preload ML models: {e}")
-            print("[Flask] Models will be loaded when streaming starts")
+            app.logger.warning(f"[Flask] Could not preload IMU interpretation models: {e}")
+            app.logger.info("[Flask] Models will be loaded when streaming starts")
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, handle_shutdown)
         signal.signal(signal.SIGTERM, handle_shutdown)
         
-        print("[Flask] Starting Flask API server on http://localhost:5000")
-        print("[Flask] Press Ctrl+C to stop")
+        app.logger.info("[Flask] Starting Flask API server on http://localhost:5000")
+        app.logger.info("[Flask] Press Ctrl+C to stop")
         
         app.run(debug=False, host="localhost", port=5000, threaded=True)
     except KeyboardInterrupt:
         handle_shutdown(None, None)
     except Exception as e:
-        print(f"[Flask] Fatal error: {e}")
+        app.logger.exception("[Flask] Fatal error")
         raise

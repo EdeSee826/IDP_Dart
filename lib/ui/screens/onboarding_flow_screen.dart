@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/backend_status_provider.dart';
-import '../../state/patient_controller.dart';
 import '../../state/session_controller.dart';
 import '../widgets/sensor_connection_panel.dart';
 
@@ -92,9 +91,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
               height: 8,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
-                color: active
-                    ? const Color(0xFF2D8E90)
-                    : const Color(0xFFD2E3EE),
+                color:
+                    active ? const Color(0xFF2D8E90) : const Color(0xFFD2E3EE),
               ),
             ),
           );
@@ -200,7 +198,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
         style: FilledButton.styleFrom(
           backgroundColor: const Color(0xFF2D8E90),
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: const Text('Get Started'),
       ),
@@ -210,7 +209,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
   Widget _sensorPlacementPage() {
     return _pageCard(
       title: 'Sensor Placement',
-      subtitle: 'Place both wearable sensors comfortably for reliable daily monitoring.',
+      subtitle:
+          'Place both wearable sensors comfortably for reliable daily monitoring.',
       content: Column(
         children: [
           // MAIN IMAGE SECTION
@@ -222,7 +222,7 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                 fit: StackFit.expand,
                 children: [
                   Image.asset(
-                    'image_2.png',
+                    'images/image_2.png',
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) => Container(
                       decoration: const BoxDecoration(
@@ -233,7 +233,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                         ),
                       ),
                       child: const Center(
-                        child: Icon(Icons.accessibility_new_rounded, size: 66, color: Color(0xFF7A8698)),
+                        child: Icon(Icons.accessibility_new_rounded,
+                            size: 66, color: Color(0xFF7A8698)),
                       ),
                     ),
                   ),
@@ -246,16 +247,20 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                       child: GestureDetector(
                         onTap: () => _showSensorSheet(
                           title: 'Sensor 1: Upper Arm Sensor',
-                          connected: ref.read(backendStatusProvider).device1Connected,
-                          batteryLevel: ref.read(patientStateWithEventsProvider).device1BatteryLevel,
+                          connected:
+                              ref.read(backendStatusProvider).device1Connected,
+                          batteryLevel: ref
+                              .read(backendStatusProvider)
+                              .device1BatteryPercent,
                         ),
                         child: Container(
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: ref.read(backendStatusProvider).device1Connected
-                                ? const Color(0xFF20B26C)
-                                : const Color(0xFFE5484D),
+                            color:
+                                ref.read(backendStatusProvider).device1Connected
+                                    ? const Color(0xFF20B26C)
+                                    : const Color(0xFFE5484D),
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 2),
                             boxShadow: const [
@@ -267,7 +272,10 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                             ],
                           ),
                           child: const Center(
-                            child: Text('1', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                            child: Text('1',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800)),
                           ),
                         ),
                       ),
@@ -281,16 +289,20 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                       child: GestureDetector(
                         onTap: () => _showSensorSheet(
                           title: 'Sensor 2: Wrist Sensor',
-                          connected: ref.read(backendStatusProvider).device2Connected,
-                          batteryLevel: ref.read(patientStateWithEventsProvider).device2BatteryLevel,
+                          connected:
+                              ref.read(backendStatusProvider).device2Connected,
+                          batteryLevel: ref
+                              .read(backendStatusProvider)
+                              .device2BatteryPercent,
                         ),
                         child: Container(
                           width: 36,
                           height: 36,
                           decoration: BoxDecoration(
-                            color: ref.read(backendStatusProvider).device2Connected
-                                ? const Color(0xFF20B26C)
-                                : const Color(0xFFE5484D),
+                            color:
+                                ref.read(backendStatusProvider).device2Connected
+                                    ? const Color(0xFF20B26C)
+                                    : const Color(0xFFE5484D),
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 2),
                             boxShadow: const [
@@ -302,7 +314,10 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                             ],
                           ),
                           child: const Center(
-                            child: Text('2', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                            child: Text('2',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800)),
                           ),
                         ),
                       ),
@@ -321,15 +336,17 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                 ? Column(
                     children: [
                       _instructionCard(
-                        asset: 'image_3.png',
+                        asset: 'images/image_3.png',
                         title: 'Sensor 1: Upper Arm Sensor',
-                        description: 'Placed above the elbow region on the upper arm.',
+                        description:
+                            'Placed above the elbow region on the upper arm.',
                       ),
                       const SizedBox(height: 10),
                       _instructionCard(
-                        asset: 'image_4.png',
+                        asset: 'images/image_4.png',
                         title: 'Sensor 2: Wrist Sensor',
-                        description: 'Placed comfortably near the wrist/forearm region.',
+                        description:
+                            'Placed comfortably near the wrist/forearm region.',
                       ),
                     ],
                   )
@@ -337,17 +354,19 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                     children: [
                       Expanded(
                         child: _instructionCard(
-                          asset: 'image_3.png',
+                          asset: 'images/image_3.png',
                           title: 'Sensor 1: Upper Arm Sensor',
-                          description: 'Placed above the elbow region on the upper arm.',
+                          description:
+                              'Placed above the elbow region on the upper arm.',
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _instructionCard(
-                          asset: 'image_4.png',
+                          asset: 'images/image_4.png',
                           title: 'Sensor 2: Wrist Sensor',
-                          description: 'Placed comfortably near the wrist/forearm region.',
+                          description:
+                              'Placed comfortably near the wrist/forearm region.',
                         ),
                       ),
                     ],
@@ -377,7 +396,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                 ),
                 SizedBox(height: 8),
                 Text('• Keep straps snug but comfortable'),
-                Text('• Avoid placing sensors directly on elbow or wrist joints'),
+                Text(
+                    '• Avoid placing sensors directly on elbow or wrist joints'),
                 Text('• Make sure sensors do not shift during movement'),
               ],
             ),
@@ -389,7 +409,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
         style: FilledButton.styleFrom(
           backgroundColor: const Color(0xFF2D8E90),
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: const Text('Continue'),
       ),
@@ -437,7 +458,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
           const SizedBox(height: 10),
           Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF1D3E53)),
+            style: const TextStyle(
+                fontWeight: FontWeight.w800, color: Color(0xFF1D3E53)),
           ),
           const SizedBox(height: 6),
           Text(
@@ -449,12 +471,11 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
     );
   }
 
-  
-
   Widget _connectSensorsPage() {
     return _pageCard(
       title: 'Connect Sensors',
-      subtitle: 'Connect both wearable sensors before we begin monitoring.',
+      subtitle:
+          'Connect both wearable sensors to record your first static and functional baseline before monitoring.',
       content: SensorConnectionPanel(
         showContinueButton: true,
         showImage: false,
@@ -474,6 +495,12 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
       context: context,
       showDragHandle: true,
       builder: (context) {
+        final backendStatus = ref.watch(backendStatusProvider);
+        final bool isDevice1 = title.contains('Sensor 1');
+        final bool? staticPassed = isDevice1
+            ? backendStatus.device1StaticPassed
+            : backendStatus.device2StaticPassed;
+
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           child: Column(
@@ -494,7 +521,9 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                   Text(
                     connected ? 'Connected' : 'Disconnected',
                     style: TextStyle(
-                      color: connected ? const Color(0xFF20B26C) : const Color(0xFFE5484D),
+                      color: connected
+                          ? const Color(0xFF20B26C)
+                          : const Color(0xFFE5484D),
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -503,7 +532,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Text('Battery:', style: TextStyle(color: Color(0xFF667085))),
+                  const Text('Battery:',
+                      style: TextStyle(color: Color(0xFF667085))),
                   const SizedBox(width: 8),
                   Text(
                     batteryLevel != null ? '$batteryLevel%' : 'Not exposed',
@@ -511,6 +541,35 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Orientation check:',
+                      style: TextStyle(color: Color(0xFF667085))),
+                  const SizedBox(width: 8),
+                  if (staticPassed == null) ...[
+                    const Text('Not checked',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                  ] else if (staticPassed == true) ...[
+                    const Text('PASS',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1FAD66))),
+                  ] else ...[
+                    const Text('FAIL',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFE23F3F))),
+                  ]
+                ],
+              ),
+              if (staticPassed == false) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Check orientation: is the device marker pointing downwards?',
+                  style: TextStyle(color: Color(0xFF667085)),
+                ),
+              ],
               const SizedBox(height: 16),
               const Text(
                 'Connection status is managed by the backend.',
@@ -550,7 +609,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
         style: FilledButton.styleFrom(
           backgroundColor: const Color(0xFF2D8E90),
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: const Text('Enter Dashboard'),
       ),

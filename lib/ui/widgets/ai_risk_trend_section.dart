@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/risk_event.dart';
+import '../../state/language_controller.dart';
 import '../models/ai_trend_data.dart';
 import 'ai_trend_insight_card.dart';
 
-class AiRiskTrendSection extends StatelessWidget {
+class AiRiskTrendSection extends ConsumerWidget {
   const AiRiskTrendSection({
     super.key,
     required this.events,
@@ -15,7 +17,8 @@ class AiRiskTrendSection extends StatelessWidget {
   final bool useDemoRiskTrendData;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final strings = ref.watch(appStringsProvider);
     // TODO: Switch useDemoRiskTrendData to false when live ML-labeled event
     // stream is ready and RiskEvent contains reliable risk classification.
     final data = useDemoRiskTrendData
@@ -65,10 +68,10 @@ class AiRiskTrendSection extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'AI Risk Trend Analysis',
-                  style: TextStyle(
+                  strings.text('AI Risk Trend Analysis'),
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF1E293B),
@@ -84,18 +87,18 @@ class AiRiskTrendSection extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.76),
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.auto_awesome_rounded,
                       size: 14,
                       color: Color(0xFF1D4ED8),
                     ),
-                    SizedBox(width: 6),
+                    const SizedBox(width: 6),
                     Text(
-                      'Weekly Movement Review',
-                      style: TextStyle(
+                      strings.text('Weekly Movement Review'),
+                      style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1D4ED8),
@@ -108,7 +111,7 @@ class AiRiskTrendSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            data.encouragementMessage,
+            strings.text(data.encouragementMessage),
             style: const TextStyle(
               color: Color(0xFF334155),
               fontWeight: FontWeight.w600,
@@ -116,14 +119,16 @@ class AiRiskTrendSection extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Wrap(
+            alignment: WrapAlignment.center,
+            runAlignment: WrapAlignment.center,
             spacing: 10,
             runSpacing: 10,
             children: [
               AiTrendInsightCard(
-                title: 'Weekly Trend',
+                title: strings.text('Weekly Trend'),
                 value:
-                    '${data.thisWeekRiskEvents} this week vs ${data.lastWeekRiskEvents} last week',
-                subtitle: data.weeklySummary,
+                    '${data.thisWeekRiskEvents} ${strings.text('this week vs')} ${data.lastWeekRiskEvents} ${strings.text('last week')}',
+                subtitle: strings.text(data.weeklySummary),
                 icon: trendMeta.icon,
                 iconColor: trendMeta.color,
                 badgeText:
@@ -131,30 +136,35 @@ class AiRiskTrendSection extends StatelessWidget {
                 badgeColor: trendMeta.badge,
               ),
               AiTrendInsightCard(
-                title: 'Peak Risk Time',
-                value: data.peakRiskTimeText,
-                subtitle: 'Time-of-day pattern from weekly events',
+                title: strings.text('Peak Risk Time'),
+                value: strings.text(data.peakRiskTimeText),
+                subtitle:
+                    strings.text('Time-of-day pattern from weekly events'),
                 icon: Icons.schedule_rounded,
                 iconColor: const Color(0xFF2563EB),
               ),
               AiTrendInsightCard(
-                title: 'Common Risk',
-                value: data.commonRiskMovementText,
-                subtitle: 'Most frequent movement needing extra awareness',
+                title: strings.text('Common Risk'),
+                value: strings.text(data.commonRiskMovementText),
+                subtitle: strings.text(
+                  'Most frequent movement needing extra awareness',
+                ),
                 icon: Icons.fitness_center_rounded,
                 iconColor: const Color(0xFF8B5CF6),
               ),
               AiTrendInsightCard(
-                title: 'Stability',
-                value: data.stabilityText,
-                subtitle: 'Consistent movement awareness days',
+                title: strings.text('Stability'),
+                value: strings.text(data.stabilityText),
+                subtitle: strings.text('Consistent movement awareness days'),
                 icon: Icons.verified_rounded,
                 iconColor: const Color(0xFF0F766E),
               ),
               AiTrendInsightCard(
-                title: 'Care Suggestion',
-                value: data.careSuggestion,
-                subtitle: 'Gentle reminder tailored to this week\'s pattern',
+                title: strings.text('Care Suggestion'),
+                value: strings.text(data.careSuggestion),
+                subtitle: strings.text(
+                  'Gentle reminder tailored to this week\'s pattern',
+                ),
                 icon: Icons.lightbulb_rounded,
                 iconColor: const Color(0xFFD97706),
               ),

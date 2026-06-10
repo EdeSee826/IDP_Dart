@@ -23,7 +23,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Login'), findsOneWidget);
-    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.text('Patient'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
+    expect(find.text('Family'), findsOneWidget);
   });
 }

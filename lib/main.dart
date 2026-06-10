@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'state/language_controller.dart';
 import 'ui/screens/auth_gate.dart';
 
 void main() {
   runApp(const ProviderScope(child: PatientMonitoringApp()));
 }
 
-class PatientMonitoringApp extends StatelessWidget {
+class PatientMonitoringApp extends ConsumerWidget {
   const PatientMonitoringApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final strings = ref.watch(appStringsProvider);
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'PICC Care Companion',
+      title: strings.text('PICC Care Companion'),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0F5BA8)),
         useMaterial3: true,

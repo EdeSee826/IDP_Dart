@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/risk_event.dart';
+import '../../state/language_controller.dart';
 import '../../state/risky_events_provider.dart';
 
 class EventLogScreen extends ConsumerStatefulWidget {
@@ -20,7 +21,7 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   }
 
   void _startPeriodicRefresh() {
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
         ref.invalidate(riskyGroupedEventsProvider);
         _startPeriodicRefresh();
@@ -31,6 +32,7 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
   @override
   Widget build(BuildContext context) {
     final grouped = ref.watch(riskyGroupedEventsProvider);
+    final strings = ref.watch(appStringsProvider);
 
     return grouped.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -38,21 +40,21 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('Error loading events'),
+            Text(strings.text('Error loading events')),
             const SizedBox(height: 10),
             ElevatedButton(
               onPressed: () => ref.invalidate(riskyGroupedEventsProvider),
-              child: const Text('Retry'),
+              child: Text(strings.text('Retry')),
             ),
           ],
         ),
       ),
       data: (groups) {
         if (groups.isEmpty) {
-          return const Center(
+          return Center(
             child: Text(
-              'No risky events detected yet.',
-              style: TextStyle(fontSize: 16, color: Color(0xFF657188)),
+              strings.text('No risky events detected yet.'),
+              style: const TextStyle(fontSize: 16, color: Color(0xFF657188)),
             ),
           );
         }
@@ -67,11 +69,14 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               if (index == 0) {
-                return const Padding(
-                  padding: EdgeInsets.only(bottom: 4),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
-                    'Tap a day to open the events recorded on that date.',
-                    style: TextStyle(color: Color(0xFF667085), fontSize: 13),
+                    strings.text(
+                      'Tap a day to open the events recorded on that date.',
+                    ),
+                    style:
+                        const TextStyle(color: Color(0xFF667085), fontSize: 13),
                   ),
                 );
               }
@@ -100,7 +105,7 @@ class _EventLogScreenState extends ConsumerState<EventLogScreen> {
 
 // Uses grouped events from backend via `riskyGroupedEventsProvider`.
 
-class _DayEventButton extends StatelessWidget {
+class _DayEventButton extends ConsumerWidget {
   const _DayEventButton({
     required this.label,
     required this.eventCount,
@@ -112,7 +117,9 @@ class _DayEventButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final strings = ref.watch(appStringsProvider);
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
@@ -155,7 +162,7 @@ class _DayEventButton extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '$eventCount event${eventCount == 1 ? '' : 's'}',
+                      strings.eventCount(eventCount),
                       style: const TextStyle(color: Color(0xFF667085)),
                     ),
                   ],

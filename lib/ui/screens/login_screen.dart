@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/session_state.dart';
+import '../../state/language_controller.dart';
 import '../../state/session_controller.dart';
+
+enum _LoginMode { patient, register, caregiver }
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -17,7 +20,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _submitting = false;
-  bool _isRegisterMode = false;
+  _LoginMode _mode = _LoginMode.patient;
+  String? _errorMessage;
+
+  bool get _isRegisterMode => _mode == _LoginMode.register;
+  bool get _isCaregiverMode => _mode == _LoginMode.caregiver;
 
   @override
   void dispose() {
@@ -30,6 +37,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionControllerProvider);
+    final strings = ref.watch(appStringsProvider);
 
     if (session.status == SessionStatus.authenticated) {
       return const SizedBox.shrink();
@@ -56,15 +64,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        _isRegisterMode ? 'Create Account' : 'Sign In',
+                        _isRegisterMode
+                            ? strings.text('Create Account')
+                            : _isCaregiverMode
+                                ? strings.text('Caregiver Access')
+                                : strings.text('Patient Sign In'),
                         style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.w800),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         _isRegisterMode
-                            ? 'Create a new account to get started with PICC monitoring.'
-                            : 'Log in to continue to your patient dashboard.',
+                            ? strings.text(
+                                'Create a new account to get started with PICC monitoring.',
+                              )
+                            : _isCaregiverMode
+                                ? strings.text(
+                                    'View summaries and trends for patients who shared access with you.',
+                                  )
+                                : strings.text(
+                                    'Log in to continue to your patient dashboard.',
+                                  ),
                         style: const TextStyle(color: Color(0xFF667085)),
                       ),
                       const SizedBox(height: 20),
@@ -73,79 +93,64 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           color: const Color(0xFFF3F6FB),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: FilledButton(
-                                onPressed: _submitting
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _isRegisterMode = false;
-                                        });
-                                      },
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _isRegisterMode
-                                      ? Colors.transparent
-                                      : null,
-                                  foregroundColor: _isRegisterMode
-                                      ? const Color(0xFF667085)
-                                      : null,
-                                ),
-                                child: const Text('Sign In'),
-                              ),
+                        child: SegmentedButton<_LoginMode>(
+                          segments: [
+                            ButtonSegment(
+                              value: _LoginMode.patient,
+                              label: Text(strings.text('Patient')),
                             ),
-                            Expanded(
-                              child: FilledButton(
-                                onPressed: _submitting
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _isRegisterMode = true;
-                                        });
-                                      },
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _isRegisterMode
-                                      ? null
-                                      : Colors.transparent,
-                                  foregroundColor: _isRegisterMode
-                                      ? null
-                                      : const Color(0xFF667085),
-                                ),
-                                child: const Text('Create Account'),
-                              ),
+                            ButtonSegment(
+                              value: _LoginMode.register,
+                              label: Text(strings.text('Create')),
+                            ),
+                            ButtonSegment(
+                              value: _LoginMode.caregiver,
+                              label: Text(strings.text('Family')),
                             ),
                           ],
+                          selected: {_mode},
+                          showSelectedIcon: false,
+                          onSelectionChanged: _submitting
+                              ? null
+                              : (selection) {
+                                  setState(() {
+                                    _mode = selection.first;
+                                    _errorMessage = null;
+                                  });
+                                },
                         ),
                       ),
                       const SizedBox(height: 20),
-                      TextFormField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Full Name',
-                          border: OutlineInputBorder(),
+                      if (_isRegisterMode) ...[
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            labelText: strings.text('Username'),
+                            border: const OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            if (_isRegisterMode &&
+                                (value == null || value.trim().isEmpty)) {
+                              return strings.text('Name is required');
+                            }
+                            return null;
+                          },
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Name is required';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
+                        const SizedBox(height: 12),
+                      ],
                       TextFormField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          labelText: strings.text('Email'),
+                          border: const OutlineInputBorder(),
                         ),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
-                            return 'Email is required';
+                            return strings.text('Email is required');
                           }
                           if (!value.contains('@')) {
-                            return 'Enter a valid email';
+                            return strings.text('Enter a valid email');
                           }
                           return null;
                         },
@@ -153,19 +158,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _passwordController,
-                        obscureText: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          border: OutlineInputBorder(),
+                        obscureText: !_isCaregiverMode,
+                        decoration: InputDecoration(
+                          labelText: _isCaregiverMode
+                              ? strings.text('Access token')
+                              : strings.text('Password'),
+                          prefixIcon: _isCaregiverMode
+                              ? const Icon(Icons.key_outlined)
+                              : null,
+                          border: const OutlineInputBorder(),
                         ),
                         validator: (value) {
+                          if (_isCaregiverMode &&
+                              (value == null || value.trim().isEmpty)) {
+                            return strings.text('Access token is required');
+                          }
                           if (value == null || value.length < 6) {
-                            return 'Minimum 6 characters';
+                            return strings.text('Minimum 6 characters');
                           }
                           return null;
                         },
                       ),
                       const SizedBox(height: 16),
+                      if (_errorMessage != null) ...[
+                        Text(
+                          _errorMessage!,
+                          style: const TextStyle(
+                            color: Color(0xFFB42318),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       FilledButton(
                         onPressed: _submitting
                             ? null
@@ -175,20 +199,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 }
                                 setState(() {
                                   _submitting = true;
+                                  _errorMessage = null;
                                 });
+                                String? error;
                                 if (_isRegisterMode) {
-                                  await ref
+                                  error = await ref
                                       .read(sessionControllerProvider.notifier)
                                       .register(
                                         name: _nameController.text,
                                         email: _emailController.text,
                                         password: _passwordController.text,
                                       );
+                                } else if (_isCaregiverMode) {
+                                  error = await ref
+                                      .read(sessionControllerProvider.notifier)
+                                      .loginCaregiver(
+                                        email: _emailController.text,
+                                        token: _passwordController.text,
+                                      );
                                 } else {
-                                  await ref
+                                  error = await ref
                                       .read(sessionControllerProvider.notifier)
                                       .login(
-                                        name: _nameController.text,
                                         email: _emailController.text,
                                         password: _passwordController.text,
                                       );
@@ -196,12 +228,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 if (mounted) {
                                   setState(() {
                                     _submitting = false;
+                                    _errorMessage = error;
                                   });
                                 }
                               },
                         child: Text(_submitting
-                            ? (_isRegisterMode ? 'Creating...' : 'Signing in...')
-                            : (_isRegisterMode ? 'Create Account' : 'Sign In')),
+                            ? (_isRegisterMode
+                                ? strings.text('Creating...')
+                                : strings.text('Signing in...'))
+                            : (_isRegisterMode
+                                ? strings.text('Create Account')
+                                : _isCaregiverMode
+                                    ? strings.text('Open Caregiver Dashboard')
+                                    : strings.text('Patient Sign In'))),
                       ),
                     ],
                   ),

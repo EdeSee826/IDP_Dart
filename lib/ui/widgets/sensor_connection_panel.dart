@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/backend_service.dart';
 import '../../state/backend_status_provider.dart';
+import '../../state/language_controller.dart';
+import '../../state/session_controller.dart';
 import 'wearable_image.dart';
 import 'device_status_tile.dart';
 
@@ -33,32 +35,52 @@ class SensorConnectionPanel extends ConsumerStatefulWidget {
 
 class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
   bool _busy = false;
+  bool _retryingCalibration = false;
   String? _errorMessage;
-  int _countdownSeconds = 15;
-  Timer? _countdownTimer;
 
-  @override
-  void dispose() {
-    _countdownTimer?.cancel();
-    super.dispose();
+  Future<bool> _waitForBothSensors() async {
+    final deadline = DateTime.now().add(const Duration(seconds: 35));
+
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      await ref.read(backendStatusProvider.notifier).refreshStatus();
+      final status = ref.read(backendStatusProvider);
+
+      if (status.device1Connected && status.device2Connected) {
+        return true;
+      }
+      if (status.errorMessage != null) {
+        _errorMessage = status.errorMessage;
+        return false;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    }
+
+    _errorMessage = ref
+        .read(appStringsProvider)
+        .text('Both sensors were not found. Check that they are powered on.');
+    return false;
   }
 
-  Future<void> _showConnectionCountdown() async {
-    _countdownTimer?.cancel();
-    _countdownSeconds = 15;
-    StateSetter? dialogSetState;
+  Future<void> _showCalibrationGuide({
+    required bool enrollBaseline,
+  }) async {
     BuildContext? dialogContext;
+    var refreshInProgress = false;
+    final timer = Timer.periodic(const Duration(milliseconds: 400), (_) async {
+      if (refreshInProgress) return;
+      refreshInProgress = true;
+      await ref.read(backendStatusProvider.notifier).refreshStatus();
+      refreshInProgress = false;
 
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_countdownSeconds > 0) {
-        _countdownSeconds--;
-        dialogSetState?.call(() {});
-        return;
-      }
-
-      timer.cancel();
+      final status = ref.read(backendStatusProvider);
+      final shouldClose = status.calibrationPhase == 'complete' ||
+          status.errorMessage != null ||
+          !status.streamingActive;
       final currentContext = dialogContext;
-      if (mounted && currentContext != null && Navigator.of(currentContext).canPop()) {
+      if (shouldClose &&
+          currentContext != null &&
+          currentContext.mounted &&
+          Navigator.of(currentContext).canPop()) {
         Navigator.of(currentContext).pop();
       }
     });
@@ -68,84 +90,393 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
       barrierDismissible: false,
       builder: (dialogCtx) {
         dialogContext = dialogCtx;
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            dialogSetState = setStateDialog;
+        return Consumer(
+          builder: (context, ref, _) {
+            final status = ref.watch(backendStatusProvider);
+            final strings = ref.watch(appStringsProvider);
+            final phase = status.calibrationPhase;
+            final isReadyToStand = phase == 'ready_to_stand';
+            final isFunctional =
+                phase == 'functional' || phase == 'functional_failed';
+            final hasFailedCalibration =
+                phase == 'static_failed' || phase == 'functional_failed';
+            final color = isFunctional
+                ? (hasFailedCalibration
+                    ? const Color(0xFFB42318)
+                    : const Color(0xFF6D35D4))
+                : (hasFailedCalibration
+                    ? const Color(0xFFD97706)
+                    : const Color(0xFF0F7B6C));
+            final remaining = status.calibrationRemainingSeconds;
+            final totalSeconds = isFunctional ? 12 : 5;
+            final calibrationMessage = phase == 'functional_failed'
+                ? strings.text(
+                    'Functional calibration failed. Sensor 1 and Sensor 2 may be swapped. Check that Sensor 1 is on the upper arm and Sensor 2 is on the wrist.',
+                  )
+                : phase == 'static_failed'
+                    ? strings.text(
+                        'Static calibration differs from your initial baseline. Check that each sensor marker points down toward the earth.',
+                      )
+                    : isReadyToStand
+                        ? strings.text(
+                            'Both sensors are connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.',
+                          )
+                        : status.calibrationMessage ??
+                            strings.text(
+                              'Preparing calibration after both sensors connect.',
+                            );
 
             return AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),
               contentPadding: const EdgeInsets.all(24),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Connecting your wearable sensors...',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1A1F2D),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isFunctional
+                          ? Icons.touch_app_rounded
+                          : Icons.accessibility_new_rounded,
+                      color: color,
+                      size: 38,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Checking nearby sensors...',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF667085),
-                    ),
-                  ),
-                  const SizedBox(height: 26),
-                  Container(
-                    width: 116,
-                    height: 116,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFE8F4F1),
-                      border: Border.all(
-                        color: const Color(0xFF2D8E90),
-                        width: 3,
+                    const SizedBox(height: 12),
+                    Text(
+                      phase == 'functional_failed'
+                          ? strings.text('Check whether sensors are swapped')
+                          : phase == 'static_failed'
+                              ? strings.text('Check sensor orientation')
+                              : isReadyToStand
+                                  ? strings.text('Stand before calibration')
+                                  : isFunctional
+                                      ? strings.text('Functional calibration')
+                                      : strings.text('Static calibration'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1F2D),
                       ),
                     ),
-                    child: Center(
-                      child: Text(
-                        '$_countdownSeconds',
-                        style: const TextStyle(
-                          fontSize: 44,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF2D8E90),
+                    const SizedBox(height: 8),
+                    Text(
+                      calibrationMessage,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF667085),
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _calibrationGuideImage(
+                      assetPath: isFunctional
+                          ? 'images/functional_calibration.png'
+                          : 'images/standing.png',
+                      fallback: isFunctional
+                          ? _functionalCalibrationFallback
+                          : _staticCalibrationFallback,
+                    ),
+                    if (hasFailedCalibration || isReadyToStand) ...[
+                      const SizedBox(height: 22),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _retryingCalibration
+                              ? null
+                              : () => _acknowledgeCalibrationFailure(),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: color,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          icon: _retryingCalibration
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.check_rounded),
+                          label: Text(strings.text('I understand')),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    height: 6,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: _countdownSeconds / 15,
-                        backgroundColor: const Color(0xFFD7E6EB),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Color(0xFF2D8E90),
+                    ] else ...[
+                      const SizedBox(height: 26),
+                      Container(
+                        width: 116,
+                        height: 116,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color.withValues(alpha: 0.10),
+                          border: Border.all(color: color, width: 3),
+                        ),
+                        child: Center(
+                          child: remaining == null
+                              ? CircularProgressIndicator(color: color)
+                              : Text(
+                                  '$remaining',
+                                  style: const TextStyle(
+                                    fontSize: 44,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF1A1F2D),
+                                  ),
+                                ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                      const SizedBox(height: 20),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: remaining == null
+                              ? null
+                              : (remaining / totalSeconds).clamp(0.0, 1.0),
+                          minHeight: 6,
+                          backgroundColor: const Color(0xFFD7E6EB),
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             );
           },
         );
       },
     );
+    timer.cancel();
 
-    _countdownTimer?.cancel();
-    _countdownTimer = null;
+    if (!mounted) return;
+    final status = ref.read(backendStatusProvider);
+    if (status.calibrationPhase == 'complete') {
+      if (enrollBaseline) {
+        await ref
+            .read(sessionControllerProvider.notifier)
+            .completeSensorBaseline();
+      } else {
+        await _showCalibrationResultWarnings(status);
+      }
+      if (!mounted) return;
+      final hasFailedCheck = !enrollBaseline &&
+          (status.staticCalibrationPassed == false ||
+              status.functionalCalibrationPassed == false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            hasFailedCheck
+                ? ref.read(appStringsProvider).text(
+                      'Calibration checks finished. Please correct the sensor placement.',
+                    )
+                : ref
+                    .read(appStringsProvider)
+                    .text('Calibration complete. Monitoring is starting.'),
+          ),
+        ),
+      );
+    } else if (status.errorMessage != null) {
+      _errorMessage = status.errorMessage;
+    }
+  }
+
+  Future<void> _acknowledgeCalibrationFailure() async {
+    if (_retryingCalibration) return;
+    setState(() => _retryingCalibration = true);
+
+    final result = await BackendService.retryCalibration();
+    if (result.success) {
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      while (mounted && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        await ref.read(backendStatusProvider.notifier).refreshStatus();
+        final phase = ref.read(backendStatusProvider).calibrationPhase;
+        if (phase != 'ready_to_stand' &&
+            phase != 'static_failed' &&
+            phase != 'functional_failed') {
+          break;
+        }
+      }
+    } else {
+      await ref.read(backendStatusProvider.notifier).refreshStatus();
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _retryingCalibration = false;
+      if (!result.success) {
+        _errorMessage = result.message;
+      }
+    });
+  }
+
+  Future<void> _showCalibrationResultWarnings(
+    BackendStatusState status,
+  ) async {
+    if (status.staticCalibrationPassed == false) {
+      await _showPlacementWarning(
+        title: 'Check sensor orientation',
+        message:
+            'The static neutral reading differs from the initial reading saved when this account was created. Check both sensors and make sure each orientation marker points down toward the earth.',
+        icon: Icons.explore_rounded,
+        color: const Color(0xFFD97706),
+      );
+    }
+
+    if (!mounted) return;
+    if (status.functionalCalibrationPassed == false) {
+      await _showPlacementWarning(
+        title: 'Check whether sensors are swapped',
+        message:
+            'Functional calibration failed. Sensor 1 and Sensor 2 may be swapped. Check that Sensor 1 is on the upper arm and Sensor 2 is on the wrist.',
+        icon: Icons.accessibility_new_rounded,
+        color: const Color(0xFFB42318),
+      );
+    }
+  }
+
+  Future<void> _showPlacementWarning({
+    required String title,
+    required String message,
+    required IconData icon,
+    required Color color,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        final strings = ref.read(appStringsProvider);
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withValues(alpha: 0.10),
+                ),
+                child: Icon(icon, color: color, size: 34),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                strings.text(title),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1A1F2D),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                strings.text(message),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF667085),
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: FilledButton.styleFrom(backgroundColor: color),
+              child: Text(strings.text('I understand')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _functionalCalibrationFallback() {
+    final strings = ref.watch(appStringsProvider);
+
+    return Container(
+      width: 360,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F4FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD8C8FF)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings.text('Forward tap on thigh'),
+            style: const TextStyle(
+              color: Color(0xFF312E81),
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(strings.text('1. Keep your PICC arm straight.')),
+          Text(strings.text('2. Tap slightly forward, about 10 degrees.')),
+          Text(strings.text('3. Repeat 3 times.')),
+        ],
+      ),
+    );
+  }
+
+  Widget _staticCalibrationFallback() {
+    final strings = ref.watch(appStringsProvider);
+
+    return Container(
+      width: 360,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF8F6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFBFE3DB)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            strings.text('Stand still for calibration'),
+            style: const TextStyle(
+              color: Color(0xFF0F5F56),
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(strings.text('1. Stand comfortably with the PICC arm relaxed.')),
+          Text(strings.text('2. Keep the arm still beside the body.')),
+          Text(strings.text('3. Make sure the sensor marker points down.')),
+        ],
+      ),
+    );
+  }
+
+  Widget _calibrationGuideImage({
+    required String assetPath,
+    required Widget Function() fallback,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Image.asset(
+        assetPath,
+        fit: BoxFit.contain,
+        width: 360,
+        errorBuilder: (context, error, stackTrace) => fallback(),
+      ),
+    );
   }
 
   Future<void> _connectSensors() async {
@@ -158,16 +489,30 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
       _errorMessage = null;
     });
 
-    _showConnectionCountdown();
-
     try {
-      final result = await BackendService.startStreaming();
+      final session = ref.read(sessionControllerProvider);
+      final enrollBaseline = !session.sensorBaselineCompleted;
+      final result = await BackendService.startStreaming(
+        enrollBaseline: enrollBaseline,
+        accountId: session.email ?? 'default',
+      );
       await ref.read(backendStatusProvider.notifier).refreshStatus();
       if (!result.success) {
-        _errorMessage = result.message ?? 'Unable to connect sensors right now.';
+        _errorMessage = result.message ??
+            ref
+                .read(appStringsProvider)
+                .text('Unable to connect sensors right now.');
+      } else if (mounted) {
+        final bothConnected = await _waitForBothSensors();
+        if (bothConnected && mounted) {
+          await _showCalibrationGuide(enrollBaseline: enrollBaseline);
+        }
+        await ref.read(backendStatusProvider.notifier).refreshStatus();
       }
     } catch (e) {
-      _errorMessage = 'Unable to connect sensors right now.';
+      _errorMessage = ref
+          .read(appStringsProvider)
+          .text('Unable to connect sensors right now.');
       await ref.read(backendStatusProvider.notifier).refreshStatus();
     } finally {
       if (mounted) {
@@ -192,10 +537,15 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
       final result = await BackendService.stopStreaming();
       await ref.read(backendStatusProvider.notifier).refreshStatus();
       if (!result.success) {
-        _errorMessage = result.message ?? 'Unable to pause monitoring right now.';
+        _errorMessage = result.message ??
+            ref
+                .read(appStringsProvider)
+                .text('Unable to pause monitoring right now.');
       }
     } catch (e) {
-      _errorMessage = 'Unable to pause monitoring right now.';
+      _errorMessage = ref
+          .read(appStringsProvider)
+          .text('Unable to pause monitoring right now.');
       await ref.read(backendStatusProvider.notifier).refreshStatus();
     } finally {
       if (mounted) {
@@ -221,7 +571,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
           child: WearableImage(
-            asset: 'image_2.png',
+            asset: 'images/image_2.png',
             height: 520,
             boxFit: BoxFit.contain,
             device1Connected: backendStatus.device1Connected,
@@ -237,12 +587,28 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
   @override
   Widget build(BuildContext context) {
     final backendStatus = ref.watch(backendStatusProvider);
-    final connectedCount = backendStatus.connectedCount.clamp(0, 2);
-    final allConnected = backendStatus.device1Connected && backendStatus.device2Connected;
+    final session = ref.watch(sessionControllerProvider);
+    final strings = ref.watch(appStringsProvider);
+    final connectedCount = [
+      backendStatus.device1Connected,
+      backendStatus.device2Connected,
+    ].where((connected) => connected).length;
+    final allConnected =
+        backendStatus.device1Connected && backendStatus.device2Connected;
     final monitoringActive = backendStatus.streamingActive && allConnected;
+    final connecting = backendStatus.calibrationPhase == 'connecting';
+    final calibrating = backendStatus.calibrationPhase == 'static' ||
+        backendStatus.calibrationPhase == 'functional' ||
+        backendStatus.calibrationPhase == 'ready_to_stand' ||
+        backendStatus.calibrationPhase == 'static_failed' ||
+        backendStatus.calibrationPhase == 'functional_failed';
+    final calibrationComplete = backendStatus.calibrationPhase == 'complete' &&
+        session.sensorBaselineCompleted;
     final actionLabel = backendStatus.streamingActive
-        ? 'Pause Monitoring'
-        : (connectedCount > 0 ? 'Reconnect Sensors' : 'Connect Sensors');
+        ? strings.text('Disconnect')
+        : (connectedCount > 0
+            ? strings.text('Reconnect Sensors')
+            : strings.text('Connect Sensors'));
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -261,9 +627,9 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Wearable Sensors',
-            style: TextStyle(
+          Text(
+            strings.text('Wearable Sensors'),
+            style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.2,
@@ -272,44 +638,90 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
           ),
           const SizedBox(height: 6),
           Text(
-            monitoringActive ? 'Monitoring active' : 'Monitoring paused',
+            connecting
+                ? strings.text('Connecting sensors...')
+                : calibrating
+                    ? strings.text('Calibrating sensors...')
+                    : monitoringActive
+                        ? strings.text('Monitoring active')
+                        : strings.text('Monitoring paused'),
             style: TextStyle(
-              color: monitoringActive ? const Color(0xFF13795B) : const Color(0xFF667085),
+              color: monitoringActive
+                  ? const Color(0xFF13795B)
+                  : const Color(0xFF667085),
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
           DeviceStatusTile(
-            title: 'Sensor 1: Upper Arm Sensor',
+            title: strings.text('Sensor 1: Upper Arm Sensor'),
             connected: backendStatus.device1Connected,
           ),
           const SizedBox(height: 8),
           DeviceStatusTile(
-            title: 'Sensor 2: Wrist Sensor',
+            title: strings.text('Sensor 2: Wrist Sensor'),
             connected: backendStatus.device2Connected,
           ),
           const SizedBox(height: 10),
           Text(
-            'Connected sensors: $connectedCount / 2',
+            '${strings.text('Connected sensors')}: $connectedCount / 2',
             style: const TextStyle(
               color: Color(0xFF667085),
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
             ),
           ),
+          if (widget.showContinueButton) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  calibrationComplete
+                      ? Icons.verified_rounded
+                      : Icons.pending_actions_rounded,
+                  size: 18,
+                  color: calibrationComplete
+                      ? const Color(0xFF13795B)
+                      : const Color(0xFFD97706),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    calibrationComplete
+                        ? strings.text(
+                            'Static and functional calibration complete',
+                          )
+                        : calibrating
+                            ? strings.text('Calibration in progress')
+                            : strings.text(
+                                'Static and functional calibration required',
+                              ),
+                    style: TextStyle(
+                      color: calibrationComplete
+                          ? const Color(0xFF13795B)
+                          : const Color(0xFF8A4B08),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: _busy ? null : () => _handlePrimaryAction(backendStatus),
+                  onPressed:
+                      _busy ? null : () => _handlePrimaryAction(backendStatus),
                   icon: Icon(
                     backendStatus.streamingActive
-                        ? Icons.pause_circle_outline_rounded
+                        ? Icons.link_off_rounded
                         : Icons.link_rounded,
                   ),
                   label: Text(
-                    _busy ? 'Checking sensors...' : actionLabel,
+                    _busy ? strings.text('Checking sensors...') : actionLabel,
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -346,7 +758,9 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: allConnected && !_busy ? widget.onContinue : null,
+                onPressed: allConnected && calibrationComplete && !_busy
+                    ? widget.onContinue
+                    : null,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF0F7B6C),
                   padding: const EdgeInsets.symmetric(vertical: 14),

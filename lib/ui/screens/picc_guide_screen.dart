@@ -185,7 +185,7 @@ class _HeaderSection extends StatelessWidget {
             height: 250,
             width: 340,
             child: Image.asset(
-              'header_patient.png',
+              'images/header_patient.png',
               fit: BoxFit.cover,
             ),
           );

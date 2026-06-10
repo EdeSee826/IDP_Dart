@@ -180,11 +180,22 @@ class PatientController extends StateNotifier<PatientState> {
       device2BatteryLevel: () => state.device2BatteryLevel ?? 80,
     );
   }
+
   void setPatientName(String name) {
     if (name.trim().isEmpty) {
       return;
     }
     state = state.copyWith(patientName: name.trim());
+  }
+
+  void switchPatient(String name) {
+    state = PatientState.initial().copyWith(patientName: name.trim());
+    _initializeCareSchedule();
+    _syncDailyChecklist();
+  }
+
+  void clearPatient() {
+    state = PatientState.initial();
   }
 
   void setSymptomsChecked(bool value) {

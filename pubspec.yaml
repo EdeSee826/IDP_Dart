@@ -24,51 +24,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - image_1.png
-    - image_2.png
-    - image_3.png
-    - image_4.png
-    - header_patient.png
-    - elbow_flexion_avoid.png
-    - shoulder_adduction_avoid.png
-    - overhead_arm_avoid.png
-    - heavy_lifting_avoid.png
-    - repetitive_arm_avoid.png
-    - sleeping_picc_arm_avoid.png
-    - sudden_pulling_avoid.png
-    - contact_sport_avoid.png
-    - elbow_safe.png
-    - arms_by_side_safe.png
-    - gentle_activity_safe.png
-    - use_both_hands_safe.png
-    - move_slowly_safe.png
-    - sleep_support_safe.png
-    - good_posture_safe.png
-    - clean_dry.png
-    - shower_protection.png
-    - no_swimming.png
-    - loose_clothing.png
-    - no_sharp_object.png
-    - clean_connector.png
-    - check_site.png
-    - dressing_secure.png
-    - avoid_sweat.png
-    - children_pets.png
-    - follow_instruction.png
-    - redness.png
-    - swelling.png
-    - pain.png
-    - bleeding.png
-    - leaking_fluid.png
-    - fewer_chills.png
-    - chest_pain.png
-    - shortness_breath.png
-    - catheter_slipping.png
-    - difficulty_flushing.png
-    - move_gently.png
-    - avoid_pulling.png
-    - keep_dry.png
-    - stay_hydrated.png
-    - avoid_heavy_bag.png
-    - report_early.png
+    - images/
 

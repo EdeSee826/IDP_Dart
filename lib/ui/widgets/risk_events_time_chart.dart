@@ -1,10 +1,12 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/risk_event.dart';
+import '../../state/language_controller.dart';
 
-class RiskEventsTimeChart extends StatelessWidget {
+class RiskEventsTimeChart extends ConsumerWidget {
   const RiskEventsTimeChart({
     super.key,
     required this.events,
@@ -15,7 +17,8 @@ class RiskEventsTimeChart extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final strings = ref.watch(appStringsProvider);
     final dailyBars = _buildDailyBars(events);
 
     return Container(
@@ -28,9 +31,9 @@ class RiskEventsTimeChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Risky Events - Last 7 Days',
-            style: TextStyle(
+          Text(
+            strings.text('Risky Events - Last 7 Days'),
+            style: const TextStyle(
               fontWeight: FontWeight.w700,
               color: Color(0xFF1A1F2D),
               fontSize: 15,
@@ -40,7 +43,7 @@ class RiskEventsTimeChart extends StatelessWidget {
           SizedBox(
             height: compact ? 150 : 210,
             child: dailyBars.isEmpty
-                ? const Center(child: Text('No events yet.'))
+                ? Center(child: Text(strings.text('No events yet.')))
                 : BarChart(
                     _buildData(dailyBars, compact),
                   ),
@@ -51,10 +54,12 @@ class RiskEventsTimeChart extends StatelessWidget {
             runSpacing: 8,
             children: [
               _ChartLegend(
-                  color: const Color(0xFF2563EB), label: 'Elbow flexion'),
+                color: const Color(0xFF2563EB),
+                label: strings.text('Elbow flexion'),
+              ),
               _ChartLegend(
                 color: const Color(0xFFF97316),
-                label: 'Shoulder adduction',
+                label: strings.text('Shoulder adduction'),
               ),
             ],
           ),

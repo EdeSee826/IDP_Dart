@@ -1,0 +1,6 @@
+/COM,ANSYS RELEASE 2025 R2           BUILD 25.2      UP20250519       10:07:30
+
+ *** ERROR ***                           CP =       3.016   TIME= 10:07:32
+ Data file C:\Users\User\Documents\Codex\2026-06-08\can-u-function-in-git
+ hub\flutter_IDP_UI\backend\risky_events.db has incorrect format, is     
+ missing READ/WRITE permission, or is empty for RESUME.                  

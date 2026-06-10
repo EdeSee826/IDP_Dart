@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/risk_event.dart';
 import '../services/backend_service.dart';
+import 'session_controller.dart';
 
 final riskyEventsProvider = FutureProvider<List<RiskEvent>>((ref) async {
-  final events = await BackendService.fetchTodayEvents();
+  final accountId = ref.watch(sessionControllerProvider).email ?? 'default';
+  final events = await BackendService.fetchTodayEvents(accountId);
   return events
       .map((e) => RiskEvent.fromBackend(
             id: e.id,
@@ -15,7 +17,8 @@ final riskyEventsProvider = FutureProvider<List<RiskEvent>>((ref) async {
 });
 
 final riskyEventsLogProvider = FutureProvider<List<RiskEvent>>((ref) async {
-  final events = await BackendService.fetchAllEvents();
+  final accountId = ref.watch(sessionControllerProvider).email ?? 'default';
+  final events = await BackendService.fetchAllEvents(accountId);
   return events
       .map((e) => RiskEvent.fromBackend(
             id: e.id,
@@ -42,7 +45,8 @@ class GroupedRiskEvents {
 
 final riskyGroupedEventsProvider =
     FutureProvider<List<GroupedRiskEvents>>((ref) async {
-  final grouped = await BackendService.fetchGroupedEvents();
+  final accountId = ref.watch(sessionControllerProvider).email ?? 'default';
+  final grouped = await BackendService.fetchGroupedEvents(accountId);
   final mapped = <GroupedRiskEvents>[];
 
   for (final g in grouped) {

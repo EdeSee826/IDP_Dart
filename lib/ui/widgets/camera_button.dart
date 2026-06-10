@@ -1,56 +1,45 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'camera_capture_stub.dart'
-    if (dart.library.html) 'camera_capture_web.dart';
+import '../../state/language_controller.dart';
 
-class CameraButton extends StatefulWidget {
-  final void Function(XFile image, Uint8List bytes)? onImageTaken;
+class CameraButton extends ConsumerStatefulWidget {
+  final void Function(XFile image)? onImageTaken;
 
   const CameraButton({super.key, this.onImageTaken});
 
   @override
-  State<CameraButton> createState() => _CameraButtonState();
+  ConsumerState<CameraButton> createState() => _CameraButtonState();
 }
 
-class _CameraButtonState extends State<CameraButton> {
-  Uint8List? _imageBytes;
+class _CameraButtonState extends ConsumerState<CameraButton> {
+  String? _selectedImageName;
   final ImagePicker _picker = ImagePicker();
 
-  Future<void> _takePhoto() async {
+  Future<void> _uploadPhoto() async {
     try {
-      final webResult = await openWebCameraDialog(context);
-      if (!mounted) return;
-      if (webResult != null) {
-        final XFile picked = webResult.xfile;
-        final Uint8List bytes = webResult.bytes;
-        setState(() => _imageBytes = bytes);
-        widget.onImageTaken?.call(picked, bytes);
-        return;
-      }
-
       final XFile? picked = await _picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.rear,
+        source: ImageSource.gallery,
         imageQuality: 85,
       );
       if (!mounted || picked == null) return;
-      final bytes = await picked.readAsBytes();
-      if (!mounted) return;
-      setState(() => _imageBytes = bytes);
-      widget.onImageTaken?.call(picked, bytes);
+      setState(() => _selectedImageName = picked.name);
+      widget.onImageTaken?.call(picked);
     } catch (e) {
       if (!context.mounted) return;
+      final strings = ref.read(appStringsProvider);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to take photo: $e')),
+        SnackBar(
+            content: Text('${strings.text('Failed to upload photo')}: $e')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final strings = ref.watch(appStringsProvider);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -68,7 +57,7 @@ class _CameraButtonState extends State<CameraButton> {
           child: Material(
             borderRadius: BorderRadius.circular(16),
             child: InkWell(
-              onTap: _takePhoto,
+              onTap: _uploadPhoto,
               borderRadius: BorderRadius.circular(16),
               child: Container(
                 decoration: BoxDecoration(
@@ -81,18 +70,18 @@ class _CameraButtonState extends State<CameraButton> {
                 ),
                 padding:
                     const EdgeInsets.symmetric(vertical: 14, horizontal: 32),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.camera_alt,
+                    const Icon(
+                      Icons.upload_file,
                       color: Colors.white,
                       size: 22,
                     ),
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
                     Text(
-                      'Open Camera',
-                      style: TextStyle(
+                      strings.text('Upload PICC Photo'),
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -104,26 +93,36 @@ class _CameraButtonState extends State<CameraButton> {
             ),
           ),
         ),
-        if (_imageBytes != null) ...[
-          const SizedBox(height: 16),
+        if (_selectedImageName != null) ...[
+          const SizedBox(height: 12),
           Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+              color: const Color(0xFFF2F4F7),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE3E8F0)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.check_circle_outline,
+                  color: Color(0xFF087454),
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    _selectedImageName!,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF475467),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: SizedBox(
-                width: 220,
-                height: 220,
-                child: Image.memory(_imageBytes!, fit: BoxFit.cover),
-              ),
             ),
           ),
         ],

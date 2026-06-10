@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class DeviceStatusTile extends StatelessWidget {
+import '../../state/language_controller.dart';
+
+class DeviceStatusTile extends ConsumerWidget {
   const DeviceStatusTile({
     super.key,
     required this.title,
@@ -11,10 +14,12 @@ class DeviceStatusTile extends StatelessWidget {
   final bool connected;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final strings = ref.watch(appStringsProvider);
     final statusColor =
         connected ? const Color(0xFF1E9E58) : const Color(0xFFD14343);
-    final statusText = connected ? 'Connected' : 'Disconnected';
+    final statusText =
+        connected ? strings.text('Connected') : strings.text('Disconnected');
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -26,7 +31,7 @@ class DeviceStatusTile extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            connected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+            connected ? Icons.link_rounded : Icons.link_off_rounded,
             color: statusColor,
           ),
           const SizedBox(width: 10),
