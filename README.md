@@ -16,6 +16,30 @@ The Flutter app handles the user interface, state management, and patient workfl
 - Flutter SDK 3.3 or newer
 - Python 3.10+ for the backend tooling
 
+## Dependencies
+
+Flutter / Dart packages used by the app:
+
+- `fl_chart`
+- `intl`
+- `flutter_riverpod`
+- `image_picker`
+- `shared_preferences`
+- `http`
+
+Python packages used by the backend:
+
+- `Flask`
+- `Flask-Cors`
+- `bleak`
+- `joblib`
+- `numpy`
+- `scikit-learn`
+- `scipy`
+- `Pillow`
+- `opencv-python`
+- `ultralytics`
+
 ## Run The App
 
 1. Install Flutter dependencies:
@@ -24,13 +48,19 @@ The Flutter app handles the user interface, state management, and patient workfl
    flutter pub get
    ```
 
-2. Start the Flutter app:
+2. Install the backend Python libraries:
+
+   ```bash
+   python -m pip install -r backend/requirements-flask.txt
+   ```
+
+3. Start the Flutter app:
 
    ```bash
    flutter run
    ```
 
-3. If you need the backend, install its Python dependencies from `backend/requirements-flask.txt` and run the Flask app in `backend/`.
+4. If you need the backend, run the Flask app in `backend/` after installing the Python libraries.
 
 ## Notes
 
