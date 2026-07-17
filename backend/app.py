@@ -810,6 +810,24 @@ def retry_calibration():
         return jsonify({"error": f"Failed to retry calibration: {str(e)}"}), 500
 
 
+@app.route("/api/calibration/bypass", methods=["POST"])
+def bypass_calibration():
+    """Bypass calibration for an explicitly requested validation-only session."""
+    try:
+        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        if not imu_interpretation.SESSION_ACTIVE:
+            return jsonify({"error": "No active sensor session"}), 400
+        if not imu_interpretation.request_calibration_bypass():
+            return jsonify({"error": "Calibration cannot be bypassed in the current phase"}), 409
+        return jsonify({
+            "status": "calibration_bypass_requested",
+            "warning": "Monitoring results from this session are uncalibrated.",
+            "timestamp": datetime.now().isoformat(),
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to bypass calibration: {str(e)}"}), 500
+
+
 # ============================================================
 # API ENDPOINTS - Event Retrieval
 # ============================================================

@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/session_state.dart';
 import '../services/backend_service.dart';
+import 'backend_status_provider.dart';
 import 'patient_controller.dart';
 
 final sessionControllerProvider =
@@ -274,6 +275,11 @@ class SessionController extends StateNotifier<SessionState> {
   }
 
   Future<void> logout() async {
+    if (state.role == SessionRole.patient) {
+      await BackendService.stopStreaming();
+      await _ref.read(backendStatusProvider.notifier).refreshStatus();
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_loggedInKey, false);
     await prefs.remove(_nameKey);

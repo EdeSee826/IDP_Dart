@@ -1,0 +1,831 @@
+{
+  "test": "15-minute long-duration monitoring validation",
+  "account_id": "validation-test",
+  "started_at": "2026-06-11T09:18:55.016656",
+  "completed_at": "2026-06-11T09:33:55.661734",
+  "duration_seconds": 900,
+  "start_prediction_id": 12010,
+  "start_event_id": 240,
+  "status_samples": [
+    {
+      "elapsed_seconds": 0,
+      "timestamp": "2026-06-11T09:18:55.045896",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:18:11",
+          "raw_adc": 3231,
+          "voltage": 3.787252902984619
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:18:14",
+          "raw_adc": 3361,
+          "voltage": 3.939633846282959
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 30,
+      "timestamp": "2026-06-11T09:19:25.063711",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:19:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:19:14",
+          "raw_adc": 3369,
+          "voltage": 3.9490110874176025
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 60,
+      "timestamp": "2026-06-11T09:19:55.103218",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:19:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:19:14",
+          "raw_adc": 3369,
+          "voltage": 3.9490110874176025
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 90,
+      "timestamp": "2026-06-11T09:20:25.117432",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 68,
+          "connected": true,
+          "last_updated": "2026-06-11 09:20:11",
+          "raw_adc": 3229,
+          "voltage": 3.7849085330963135
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:20:14",
+          "raw_adc": 3368,
+          "voltage": 3.9478390216827393
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 120,
+      "timestamp": "2026-06-11T09:20:55.134708",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 68,
+          "connected": true,
+          "last_updated": "2026-06-11 09:20:11",
+          "raw_adc": 3229,
+          "voltage": 3.7849085330963135
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:20:14",
+          "raw_adc": 3368,
+          "voltage": 3.9478390216827393
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 150,
+      "timestamp": "2026-06-11T09:21:25.151812",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:21:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:21:14",
+          "raw_adc": 3368,
+          "voltage": 3.9478390216827393
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 180,
+      "timestamp": "2026-06-11T09:21:55.174932",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:21:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:21:14",
+          "raw_adc": 3368,
+          "voltage": 3.9478390216827393
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 210,
+      "timestamp": "2026-06-11T09:22:25.205867",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 68,
+          "connected": true,
+          "last_updated": "2026-06-11 09:22:11",
+          "raw_adc": 3229,
+          "voltage": 3.7849085330963135
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:22:14",
+          "raw_adc": 3368,
+          "voltage": 3.9478390216827393
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 240,
+      "timestamp": "2026-06-11T09:22:55.215974",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 68,
+          "connected": true,
+          "last_updated": "2026-06-11 09:22:11",
+          "raw_adc": 3229,
+          "voltage": 3.7849085330963135
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:22:14",
+          "raw_adc": 3368,
+          "voltage": 3.9478390216827393
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 270,
+      "timestamp": "2026-06-11T09:23:25.231954",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:23:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:23:14",
+          "raw_adc": 3367,
+          "voltage": 3.946666955947876
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 300,
+      "timestamp": "2026-06-11T09:23:55.244627",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:23:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:23:14",
+          "raw_adc": 3367,
+          "voltage": 3.946666955947876
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 330,
+      "timestamp": "2026-06-11T09:24:25.250694",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:24:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:24:14",
+          "raw_adc": 3366,
+          "voltage": 3.9454946517944336
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 360,
+      "timestamp": "2026-06-11T09:24:55.276643",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:24:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:24:14",
+          "raw_adc": 3366,
+          "voltage": 3.9454946517944336
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 390,
+      "timestamp": "2026-06-11T09:25:25.313329",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:25:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:25:14",
+          "raw_adc": 3362,
+          "voltage": 3.9408061504364014
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 420,
+      "timestamp": "2026-06-11T09:25:55.344158",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:25:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:25:14",
+          "raw_adc": 3362,
+          "voltage": 3.9408061504364014
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 450,
+      "timestamp": "2026-06-11T09:26:25.362555",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:26:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:26:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 480,
+      "timestamp": "2026-06-11T09:26:55.389504",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:26:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:26:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 510,
+      "timestamp": "2026-06-11T09:27:25.419265",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:27:11",
+          "raw_adc": 3231,
+          "voltage": 3.787252902984619
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:27:14",
+          "raw_adc": 3366,
+          "voltage": 3.9454946517944336
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 540,
+      "timestamp": "2026-06-11T09:27:55.431875",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:27:11",
+          "raw_adc": 3231,
+          "voltage": 3.787252902984619
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:27:14",
+          "raw_adc": 3366,
+          "voltage": 3.9454946517944336
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 570,
+      "timestamp": "2026-06-11T09:28:25.440182",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:28:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:28:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 600,
+      "timestamp": "2026-06-11T09:28:55.462411",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:28:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:28:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 630,
+      "timestamp": "2026-06-11T09:29:25.476020",
+      "connected_count": 2,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": true,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": true,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 660,
+      "timestamp": "2026-06-11T09:29:55.499334",
+      "connected_count": 0,
+      "session_active": true,
+      "streaming_active": true,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 690,
+      "timestamp": "2026-06-11T09:30:25.522947",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 720,
+      "timestamp": "2026-06-11T09:30:55.547854",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 750,
+      "timestamp": "2026-06-11T09:31:25.573440",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 780,
+      "timestamp": "2026-06-11T09:31:55.582197",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 810,
+      "timestamp": "2026-06-11T09:32:25.594617",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 840,
+      "timestamp": "2026-06-11T09:32:55.620338",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 870,
+      "timestamp": "2026-06-11T09:33:25.632297",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    },
+    {
+      "elapsed_seconds": 900,
+      "timestamp": "2026-06-11T09:33:55.656116",
+      "connected_count": 0,
+      "session_active": false,
+      "streaming_active": false,
+      "error_message": null,
+      "battery": {
+        "sensor1": {
+          "battery_percent": 69,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:11",
+          "raw_adc": 3230,
+          "voltage": 3.786080837249756
+        },
+        "sensor2": {
+          "battery_percent": 92,
+          "connected": false,
+          "last_updated": "2026-06-11 09:29:14",
+          "raw_adc": 3365,
+          "voltage": 3.9443225860595703
+        }
+      }
+    }
+  ],
+  "status_summary": {
+    "samples": 31,
+    "both_sensors_connected_samples": 22,
+    "streaming_active_samples": 23,
+    "samples_with_errors": 0
+  },
+  "prediction_summary": {
+    "prediction_count": 2686,
+    "activity_counts": {
+      "sitting": 101,
+      "standing": 1952,
+      "walking": 556,
+      "pronation": 40,
+      "elbow_flexion": 31,
+      "shoulder_adduction": 6
+    },
+    "risky_prediction_count": 37,
+    "confirmed_alert_count": 9,
+    "prediction_gaps_over_2_seconds": [],
+    "new_events": [
+      {
+        "id": 241,
+        "event_type": "elbow_flexion",
+        "timestamp": "2026-06-11 09:19:06",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 242,
+        "event_type": "shoulder_adduction",
+        "timestamp": "2026-06-11 09:19:07",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 243,
+        "event_type": "elbow_flexion",
+        "timestamp": "2026-06-11 09:19:38",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 244,
+        "event_type": "elbow_flexion",
+        "timestamp": "2026-06-11 09:19:39",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 245,
+        "event_type": "elbow_flexion",
+        "timestamp": "2026-06-11 09:19:48",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 246,
+        "event_type": "shoulder_adduction",
+        "timestamp": "2026-06-11 09:21:54",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 247,
+        "event_type": "elbow_flexion",
+        "timestamp": "2026-06-11 09:22:02",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 248,
+        "event_type": "elbow_flexion",
+        "timestamp": "2026-06-11 09:23:41",
+        "risk_level": "Risky"
+      },
+      {
+        "id": 249,
+        "event_type": "elbow_flexion",
+        "timestamp": "2026-06-11 09:23:46",
+        "risk_level": "Risky"
+      }
+    ]
+  }
+}

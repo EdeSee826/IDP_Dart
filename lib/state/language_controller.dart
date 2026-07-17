@@ -153,6 +153,9 @@ class AppStrings {
       '3. Repeat 3 times.': '3. Ulang 3 kali.',
       'Stand still for calibration': 'Berdiri diam untuk kalibrasi',
       'Stand before calibration': 'Berdiri sebelum kalibrasi',
+      'Prepare to pat your thigh': 'Bersedia untuk menepuk paha',
+      'Get ready to gently pat the front of your thigh with your PICC arm. Tap I understand when you are ready to begin functional calibration.':
+          'Bersedia untuk menepuk bahagian hadapan paha secara perlahan dengan lengan PICC. Tekan Saya faham apabila anda bersedia untuk memulakan kalibrasi fungsian.',
       'Both sensors are connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.':
           'Kedua-dua sensor telah disambungkan. Berdiri dengan selesa dan relakskan lengan PICC di sisi badan, kemudian tekan Saya faham untuk memulakan kalibrasi.',
       '1. Stand comfortably with the PICC arm relaxed.':
@@ -195,13 +198,15 @@ class AppStrings {
       'Status': 'Status',
       'POSSIBLE PICC DISLODGEMENT DETECTED':
           'KEMUNGKINAN PICC TERCABUT DIKESAN',
+      'PICC LENGTH REQUIRES ATTENTION': 'PANJANG PICC MEMERLUKAN PERHATIAN',
       'PICC LENGTH STABLE': 'PANJANG PICC STABIL',
-      'Difference is greater than 2.0 cm. Please contact your healthcare provider.':
-          'Perbezaan melebihi 2.0 cm. Sila hubungi penyedia penjagaan kesihatan anda.',
+      'Difference is greater than 1.0 cm. Please contact your healthcare provider.':
+          'Perbezaan melebihi 1.0 cm. Sila hubungi penyedia penjagaan kesihatan anda.',
       'Upload a photo to begin tracking this dressing cycle.':
           'Muat naik foto untuk mula menjejak kitaran balutan ini.',
       'Difference is within the expected range for this dressing cycle.':
           'Perbezaan berada dalam julat dijangka untuk kitaran balutan ini.',
+      'I have changed my dressing': 'Saya telah menukar balutan saya',
       'First scan': 'Imbasan pertama',
       'Latest - baseline': 'Terkini - asas',
       'Scanned on': 'Diimbas pada',
@@ -446,13 +451,15 @@ class AppStrings {
       'Length Difference': '长度差异',
       'Status': '状态',
       'POSSIBLE PICC DISLODGEMENT DETECTED': '检测到 PICC 可能移位',
+      'PICC LENGTH REQUIRES ATTENTION': 'PICC 长度需要注意',
       'PICC LENGTH STABLE': 'PICC 长度稳定',
-      'Difference is greater than 2.0 cm. Please contact your healthcare provider.':
-          '差异大于 2.0 cm。请联系你的医疗护理人员。',
+      'Difference is greater than 1.0 cm. Please contact your healthcare provider.':
+          '差异大于 1.0 cm。请联系你的医疗护理人员。',
       'Upload a photo to begin tracking this dressing cycle.':
           '上传照片以开始追踪本次敷料周期。',
       'Difference is within the expected range for this dressing cycle.':
           '差异在本次敷料周期的预期范围内。',
+      'I have changed my dressing': '我已更换敷料',
       'First scan': '首次扫描',
       'Latest - baseline': '最新 - 基线',
       'Scanned on': '扫描于',

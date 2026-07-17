@@ -85,7 +85,7 @@ def picc_length_from_mask(mask):
     return length_pixels
 
 
-def analyze_image(image_path, output_path=None, conf=0.10, save_compare_text=None):
+def analyze_image(image_path, output_path=None, conf=0.3, save_compare_text=None):
     results = model.predict(
         source=image_path,
         imgsz=960,

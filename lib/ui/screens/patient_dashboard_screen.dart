@@ -31,6 +31,7 @@ class _PatientDashboardScreenState
   static const Duration _flushInterval = Duration(days: 1);
   static const Duration _medicationInterval = Duration(hours: 12);
   static const Duration _dressingInterval = Duration(days: 7);
+  static const double _piccStableDifferenceCm = 1.0;
   final bool useDemoRiskTrendData = true;
   final ScrollController _checklistScrollController = ScrollController();
 
@@ -41,6 +42,7 @@ class _PatientDashboardScreenState
   String? _piccAnalysisError;
   String? _piccCycleKey;
   bool _piccCycleLoading = false;
+  bool _nextPiccScanSetsBaseline = false;
   double? _baselinePiccLengthCm;
   double? _latestPiccLengthCm;
   DateTime? _baselinePiccScannedAt;
@@ -1375,13 +1377,18 @@ class _PatientDashboardScreenState
       final patientState = ref.read(patientStateWithEventsProvider);
       final cycleKey = _dressingCycleKey(patientState.lastDressingChangeAt);
       final now = DateTime.now();
+      final setsBaseline =
+          _nextPiccScanSetsBaseline || _baselinePiccLengthCm == null;
 
       if (!mounted) return;
       setState(() {
         _piccCycleKey = cycleKey;
         _piccAnalysisResult = result;
-        _baselinePiccLengthCm ??= result.measurementCm;
-        _baselinePiccScannedAt ??= now;
+        if (setsBaseline) {
+          _baselinePiccLengthCm = result.measurementCm;
+          _baselinePiccScannedAt = now;
+          _nextPiccScanSetsBaseline = false;
+        }
         _latestPiccLengthCm = result.measurementCm;
         _latestPiccScannedAt = now;
       });
@@ -1389,6 +1396,7 @@ class _PatientDashboardScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        _nextPiccScanSetsBaseline = false;
         _piccAnalysisError = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
@@ -1416,8 +1424,7 @@ class _PatientDashboardScreenState
   }
 
   String _dressingCycleKey(DateTime? dressingDate) {
-    final date = dressingDate ?? DateTime(1970, 1, 1);
-    return DateFormat('yyyy-MM-dd').format(date);
+    return 'active-baseline';
   }
 
   String _piccPrefKey(String cycleKey, String field) {
@@ -1428,15 +1435,50 @@ class _PatientDashboardScreenState
 
   Future<void> _loadPiccCycle(String cycleKey) async {
     final prefs = await SharedPreferences.getInstance();
-    final baselineAt = prefs.getString(_piccPrefKey(cycleKey, 'baselineAt'));
-    final latestAt = prefs.getString(_piccPrefKey(cycleKey, 'latestAt'));
+    var baseline = prefs.getDouble(_piccPrefKey(cycleKey, 'baselineLength'));
+    var latest = prefs.getDouble(_piccPrefKey(cycleKey, 'latestLength'));
+    var baselineAt = prefs.getString(_piccPrefKey(cycleKey, 'baselineAt'));
+    var latestAt = prefs.getString(_piccPrefKey(cycleKey, 'latestAt'));
+
+    if (baseline == null) {
+      final accountId =
+          ref.read(sessionControllerProvider).email?.toLowerCase() ?? 'default';
+      final prefix = 'picc_length_cycle.$accountId.';
+      final legacyBaselineKeys = prefs
+          .getKeys()
+          .where((key) =>
+              key.startsWith(prefix) &&
+              key.endsWith('.baselineLength') &&
+              !key.contains('.active-baseline.'))
+          .toList();
+      legacyBaselineKeys.sort((a, b) {
+        final aAt =
+            prefs.getString(a.replaceAll('baselineLength', 'baselineAt'));
+        final bAt =
+            prefs.getString(b.replaceAll('baselineLength', 'baselineAt'));
+        return (aAt ?? '').compareTo(bAt ?? '');
+      });
+      if (legacyBaselineKeys.isNotEmpty) {
+        final oldestKey = legacyBaselineKeys.first;
+        baseline = prefs.getDouble(oldestKey);
+        baselineAt = prefs
+            .getString(oldestKey.replaceAll('baselineLength', 'baselineAt'));
+
+        final latestKey = legacyBaselineKeys.last.replaceAll(
+          'baselineLength',
+          'latestLength',
+        );
+        latest = prefs.getDouble(latestKey) ?? baseline;
+        latestAt =
+            prefs.getString(latestKey.replaceAll('latestLength', 'latestAt')) ??
+                baselineAt;
+      }
+    }
 
     if (!mounted) return;
     setState(() {
-      _baselinePiccLengthCm =
-          prefs.getDouble(_piccPrefKey(cycleKey, 'baselineLength'));
-      _latestPiccLengthCm =
-          prefs.getDouble(_piccPrefKey(cycleKey, 'latestLength'));
+      _baselinePiccLengthCm = baseline;
+      _latestPiccLengthCm = latest;
       _baselinePiccScannedAt =
           baselineAt == null ? null : DateTime.tryParse(baselineAt);
       _latestPiccScannedAt =
@@ -1444,6 +1486,23 @@ class _PatientDashboardScreenState
       _piccAnalysisResult = null;
       _piccAnalysisError = null;
     });
+    if (baseline != null) {
+      await _savePiccCycle(cycleKey);
+    }
+  }
+
+  Future<void> _captureNewPiccBaseline() async {
+    final image = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (!mounted || image == null) return;
+
+    setState(() {
+      _nextPiccScanSetsBaseline = true;
+      _piccAnalysisError = null;
+    });
+    await _analyzePiccImage(image);
   }
 
   Future<void> _savePiccCycle(String cycleKey) async {
@@ -1475,11 +1534,21 @@ class _PatientDashboardScreenState
     final latest = _latestPiccLengthCm ?? baseline;
     final difference =
         baseline == null || latest == null ? null : latest - baseline;
-    final isWarning = difference != null && difference.abs() > 2.0;
+    final isWarning =
+        difference != null && difference.abs() > _piccStableDifferenceCm;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: OutlinedButton.icon(
+            onPressed: _piccAnalyzing ? null : _captureNewPiccBaseline,
+            icon: const Icon(Icons.health_and_safety_outlined, size: 17),
+            label: Text(strings.text('I have changed my dressing')),
+          ),
+        ),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -1672,7 +1741,7 @@ class _PatientDashboardScreenState
           const SizedBox(height: 8),
           Text(
             isWarning
-                ? strings.text('POSSIBLE PICC DISLODGEMENT DETECTED')
+                ? strings.text('PICC LENGTH REQUIRES ATTENTION')
                 : strings.text('PICC LENGTH STABLE'),
             style: TextStyle(
               color: color,
@@ -1691,7 +1760,7 @@ class _PatientDashboardScreenState
             child: Text(
               isWarning
                   ? strings.text(
-                      'Difference is greater than 2.0 cm. Please contact your healthcare provider.',
+                      'Difference is greater than 1.0 cm. Please contact your healthcare provider.',
                     )
                   : difference == null
                       ? strings.text(

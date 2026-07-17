@@ -1,0 +1,44 @@
+{
+  "test": "Independent BLE connection-only observation",
+  "started_at": "2026-06-11T09:57:59.005",
+  "devices": {
+    "XIAO_MG24_Sensor_01": {
+      "connection_attempts": [
+        {
+          "attempt": 1,
+          "timestamp": "2026-06-11T09:58:11.470",
+          "outcome": "connected"
+        }
+      ],
+      "connected_at": "2026-06-11T09:58:11.470",
+      "connected_before_cleanup": true
+    },
+    "XIAO_MG24_Sensor_02": {
+      "connection_attempts": [
+        {
+          "attempt": 1,
+          "timestamp": "2026-06-11T09:58:31.807",
+          "outcome": "failed",
+          "error": "TimeoutError: "
+        },
+        {
+          "attempt": 2,
+          "timestamp": "2026-06-11T09:58:54.012",
+          "outcome": "failed",
+          "error": "TimeoutError: "
+        },
+        {
+          "attempt": 3,
+          "timestamp": "2026-06-11T09:59:16.350",
+          "outcome": "failed",
+          "error": "TimeoutError: "
+        }
+      ]
+    }
+  },
+  "first_disconnect": null,
+  "events": [],
+  "outcome": "connection_failed",
+  "failed_device": "XIAO_MG24_Sensor_02",
+  "completed_at": "2026-06-11T09:59:18.358"
+}

@@ -96,8 +96,10 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
             final strings = ref.watch(appStringsProvider);
             final phase = status.calibrationPhase;
             final isReadyToStand = phase == 'ready_to_stand';
-            final isFunctional =
-                phase == 'functional' || phase == 'functional_failed';
+            final isReadyForFunctional = phase == 'ready_for_functional';
+            final isFunctional = phase == 'functional' ||
+                phase == 'functional_failed' ||
+                isReadyForFunctional;
             final hasFailedCalibration =
                 phase == 'static_failed' || phase == 'functional_failed';
             final color = isFunctional
@@ -121,10 +123,14 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
                         ? strings.text(
                             'Both sensors are connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.',
                           )
-                        : status.calibrationMessage ??
-                            strings.text(
-                              'Preparing calibration after both sensors connect.',
-                            );
+                        : isReadyForFunctional
+                            ? strings.text(
+                                'Get ready to gently pat the front of your thigh with your PICC arm. Tap I understand when you are ready to begin functional calibration.',
+                              )
+                            : status.calibrationMessage ??
+                                strings.text(
+                                  'Preparing calibration after both sensors connect.',
+                                );
 
             return AlertDialog(
               shape: RoundedRectangleBorder(
@@ -150,9 +156,13 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
                               ? strings.text('Check sensor orientation')
                               : isReadyToStand
                                   ? strings.text('Stand before calibration')
-                                  : isFunctional
-                                      ? strings.text('Functional calibration')
-                                      : strings.text('Static calibration'),
+                                  : isReadyForFunctional
+                                      ? strings
+                                          .text('Prepare to pat your thigh')
+                                      : isFunctional
+                                          ? strings
+                                              .text('Functional calibration')
+                                          : strings.text('Static calibration'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 18,
@@ -179,7 +189,9 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
                           ? _functionalCalibrationFallback
                           : _staticCalibrationFallback,
                     ),
-                    if (hasFailedCalibration || isReadyToStand) ...[
+                    if (hasFailedCalibration ||
+                        isReadyToStand ||
+                        isReadyForFunctional) ...[
                       const SizedBox(height: 22),
                       SizedBox(
                         width: double.infinity,
@@ -295,6 +307,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
         await ref.read(backendStatusProvider.notifier).refreshStatus();
         final phase = ref.read(backendStatusProvider).calibrationPhase;
         if (phase != 'ready_to_stand' &&
+            phase != 'ready_for_functional' &&
             phase != 'static_failed' &&
             phase != 'functional_failed') {
           break;
@@ -600,6 +613,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
     final calibrating = backendStatus.calibrationPhase == 'static' ||
         backendStatus.calibrationPhase == 'functional' ||
         backendStatus.calibrationPhase == 'ready_to_stand' ||
+        backendStatus.calibrationPhase == 'ready_for_functional' ||
         backendStatus.calibrationPhase == 'static_failed' ||
         backendStatus.calibrationPhase == 'functional_failed';
     final calibrationComplete = backendStatus.calibrationPhase == 'complete' &&

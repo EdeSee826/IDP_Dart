@@ -74,7 +74,9 @@ SHUTDOWN_SETTLE_SEC = 3.0
 PLACEMENT_VERY_GOOD_DEG = 8.0
 PLACEMENT_PASS_DEG = 15.0
 PLACEMENT_CLEARLY_WRONG_DEG = 25.0
-STATIC_MARKER_AXIS_INDEX = int(os.getenv("STATIC_MARKER_AXIS_INDEX", "2"))
+# The correct marker-down baselines place gravity primarily on accelerometer X
+# (approximately -1 g). Keep this configurable for future sensor revisions.
+STATIC_MARKER_AXIS_INDEX = int(os.getenv("STATIC_MARKER_AXIS_INDEX", "0"))
 STATIC_MARKER_EXPECTED_SIGN = int(os.getenv("STATIC_MARKER_EXPECTED_SIGN", "-1"))
 STATIC_MARKER_MIN_G = float(os.getenv("STATIC_MARKER_MIN_G", "0.55"))
 
@@ -109,9 +111,11 @@ STABILIZATION_SEC = 3.0
 STABILIZATION_SAMPLES = int(EXPECTED_FREQ * STABILIZATION_SEC)
 
 RISKY_ACTIVITIES = {"elbow_flexion", "shoulder_adduction"}
-# Two consecutive overlapping predictions still reject isolated model spikes
-# while allowing the dashboard counter to react quickly.
-RISKY_CONFIRM_WINDOWS = 2
+# Give an audible warning every three consecutive risky predictions, but only
+# confirm and store a risky event after six consecutive risky predictions.
+RISKY_BEEP_INTERVAL_WINDOWS = 3
+RISKY_CONFIRM_WINDOWS = 6
+SAFE_RESET_WINDOWS = 2
 PREDICTION_RETENTION_DAYS = 7
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -173,6 +177,8 @@ paired_sample_buffer = deque(maxlen=WINDOW_SIZE)
 new_samples_since_last_prediction = 0
 paired_samples_seen = 0
 risky_counter = 0
+active_risky_class = None
+safe_counter = 0
 
 scaler = None
 svm_rfe_model = None
@@ -187,6 +193,7 @@ CALIBRATION_DEADLINE = None
 CALIBRATION_ENROLL_BASELINE = True
 CALIBRATION_ACCOUNT_ID = "default"
 CALIBRATION_RETRY_REQUESTED = False
+CALIBRATION_BYPASS_REQUESTED = False
 
 main_event_loop = None
 data_ready_event = None
@@ -252,16 +259,29 @@ def generate_default_feature_columns():
 # ============================================================
 # PART 7: COMPUTER BEEP ALERT
 # ============================================================
+alert_sound_lock = threading.Lock()
+
+
 def play_alert_sound():
     if WINDOWS_BEEP_AVAILABLE:
-        winsound.Beep(500, 250)
+        winsound.Beep(500, 100)
     else:
         print("\a", end="")
 
 
 def play_alert_sound_async():
-    """Start the patient alarm without blocking event storage or UI updates."""
-    threading.Thread(target=play_alert_sound, daemon=True).start()
+    """Play one non-blocking beep and discard overlapping stale beep requests."""
+    if not alert_sound_lock.acquire(blocking=False):
+        return False
+
+    def _play_and_release():
+        try:
+            play_alert_sound()
+        finally:
+            alert_sound_lock.release()
+
+    threading.Thread(target=_play_and_release, daemon=True).start()
+    return True
 
 
 
@@ -548,6 +568,7 @@ def request_calibration_retry():
     global CALIBRATION_RETRY_REQUESTED
     if CALIBRATION_PHASE not in {
         "ready_to_stand",
+        "ready_for_functional",
         "static_failed",
         "functional_failed",
     }:
@@ -556,11 +577,42 @@ def request_calibration_retry():
     return True
 
 
+def request_calibration_bypass():
+    """Allow an explicit validation-only bypass while calibration is paused."""
+    global CALIBRATION_BYPASS_REQUESTED
+    if CALIBRATION_PHASE not in {
+        "ready_to_stand",
+        "ready_for_functional",
+        "static",
+        "static_failed",
+        "functional",
+        "functional_failed",
+    }:
+        return False
+    CALIBRATION_BYPASS_REQUESTED = True
+    return True
+
+
+def complete_calibration_bypass():
+    """Move to monitoring after an explicitly requested validation bypass."""
+    global CALIBRATION_PHASE, CALIBRATION_MESSAGE, CALIBRATION_DEADLINE
+    CALIBRATION_PHASE = "bypassed"
+    CALIBRATION_MESSAGE = (
+        "Calibration bypassed for validation only. Monitoring results are uncalibrated."
+    )
+    CALIBRATION_DEADLINE = None
+    return True
+
+
 async def wait_for_calibration_retry():
     """Pause calibration until the patient acknowledges the correction prompt."""
     global CALIBRATION_RETRY_REQUESTED
     CALIBRATION_RETRY_REQUESTED = False
-    while SESSION_ACTIVE and not CALIBRATION_RETRY_REQUESTED:
+    while (
+        SESSION_ACTIVE
+        and not CALIBRATION_RETRY_REQUESTED
+        and not CALIBRATION_BYPASS_REQUESTED
+    ):
         await asyncio.sleep(0.2)
     CALIBRATION_RETRY_REQUESTED = False
     return SESSION_ACTIVE
@@ -752,11 +804,14 @@ def handle_disconnect(name):
 def reset_stream_state():
     global expected_seq, pair_seq, prev_mcu_diff, first_signed_mcu_diff
     global new_samples_since_last_prediction, paired_samples_seen, risky_counter
+    global active_risky_class, safe_counter
     global timestamp_zero
 
     expected_seq = pair_seq = 0
     prev_mcu_diff = first_signed_mcu_diff = None
     new_samples_since_last_prediction = paired_samples_seen = risky_counter = 0
+    active_risky_class = None
+    safe_counter = 0
     timestamp_zero = None
 
     paired_sample_buffer.clear()
@@ -980,6 +1035,9 @@ async def automatic_calibration_sequence(client_map):
     - Notify user to tap laps ~5 times (~5s), send CHECK_FUNC_PLACE and wait
     """
     global CALIBRATION_PHASE, CALIBRATION_MESSAGE, CALIBRATION_DEADLINE
+    global CALIBRATION_BYPASS_REQUESTED
+
+    CALIBRATION_BYPASS_REQUESTED = False
 
     await ensure_clients_connected(client_map, stage="automatic calibration")
 
@@ -991,6 +1049,8 @@ async def automatic_calibration_sequence(client_map):
     CALIBRATION_DEADLINE = None
     if not await wait_for_calibration_retry():
         return False
+    if CALIBRATION_BYPASS_REQUESTED:
+        return complete_calibration_bypass()
     await ensure_clients_connected(client_map, stage="calibration preparation")
 
     # Clear previous results
@@ -1038,11 +1098,25 @@ async def automatic_calibration_sequence(client_map):
             CALIBRATION_DEADLINE = None
             if not await wait_for_calibration_retry():
                 return False
+            if CALIBRATION_BYPASS_REQUESTED:
+                return complete_calibration_bypass()
 
     # Functional calibration
     while SESSION_ACTIVE:
         for name in DEVICE_NAMES:
             functional_results[name] = None
+        CALIBRATION_PHASE = "ready_for_functional"
+        CALIBRATION_MESSAGE = (
+            "Get ready to gently pat the front of your thigh with your PICC arm. "
+            "Tap I understand when you are ready to begin functional calibration."
+        )
+        CALIBRATION_DEADLINE = None
+        if not await wait_for_calibration_retry():
+            return False
+        if CALIBRATION_BYPASS_REQUESTED:
+            return complete_calibration_bypass()
+        await ensure_clients_connected(client_map, stage="functional calibration preparation")
+
         CALIBRATION_PHASE = "functional"
         CALIBRATION_MESSAGE = "Gently tap your thigh with the PICC arm for functional calibration."
         CALIBRATION_DEADLINE = time.monotonic() + FUNCTIONAL_VALIDATION_WAIT_SEC
@@ -1080,6 +1154,8 @@ async def automatic_calibration_sequence(client_map):
         CALIBRATION_DEADLINE = None
         if not await wait_for_calibration_retry():
             return False
+        if CALIBRATION_BYPASS_REQUESTED:
+            return complete_calibration_bypass()
 
     if not SESSION_ACTIVE:
         return False
@@ -1148,6 +1224,7 @@ def format_timestamp():
 # ============================================================
 def run_prediction_if_ready():
     global new_samples_since_last_prediction, risky_counter
+    global active_risky_class, safe_counter
 
     if paired_samples_seen < STABILIZATION_SAMPLES: return
     if len(paired_sample_buffer) < WINDOW_SIZE: return
@@ -1173,28 +1250,59 @@ def run_prediction_if_ready():
     model_prediction_timestamp = format_timestamp()
 
     if prediction in RISKY_ACTIVITIES:
-        risky_counter += 1
+        if prediction == active_risky_class:
+            risky_counter += 1
+        else:
+            active_risky_class = prediction
+            risky_counter = 1
+        safe_counter = 0
         risk_status = "Risky"
     else:
-        risky_counter = 0
+        if prediction == "standing":
+            risky_counter = 0
+            active_risky_class = None
+            safe_counter = 0
+        else:
+            safe_counter += 1
+            if safe_counter >= SAFE_RESET_WINDOWS:
+                risky_counter = 0
+                active_risky_class = None
+                safe_counter = 0
         risk_status = "Safe"
 
-    alert_triggered = False
-    if risky_counter >= RISKY_CONFIRM_WINDOWS:
-        alert_triggered = risky_counter == RISKY_CONFIRM_WINDOWS
-        if alert_triggered:
-            play_alert_sound_async()
-            save_risky_event(prediction)
+    current_prediction_is_active_risk = (
+        prediction in RISKY_ACTIVITIES
+        and prediction == active_risky_class
+    )
+    alert_triggered = (
+        current_prediction_is_active_risk
+        and risky_counter == RISKY_CONFIRM_WINDOWS
+    )
+    beep_triggered = (
+        current_prediction_is_active_risk
+        and risky_counter > 0
+        and risky_counter % RISKY_BEEP_INTERVAL_WINDOWS == 0
+    )
+
+    if beep_triggered:
+        beep_triggered = play_alert_sound_async()
+
+    if alert_triggered:
+        save_risky_event(prediction)
+
+    if current_prediction_is_active_risk and risky_counter >= RISKY_CONFIRM_WINDOWS:
         print(
             f"[raw={raw_received_timestamp}] [features={feature_extraction_timestamp}] "
             f"[model={model_prediction_timestamp}] Activity: {prediction} | "
-            f"Status: RISKY EVENT DETECTED | Alert: Beep"
+            f"Status: RISKY EVENT DETECTED | "
+            f"Alert: {'Beep' if beep_triggered else 'No'}"
         )
     else:
         print(
             f"[raw={raw_received_timestamp}] [features={feature_extraction_timestamp}] "
             f"[model={model_prediction_timestamp}] Activity: {prediction} | "
-            f"Status: {risk_status} | Alert: No"
+            f"Status: {risk_status} | "
+            f"Alert: {'Warning beep' if beep_triggered else 'No'}"
         )
 
     log_prediction(
