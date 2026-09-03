@@ -2,16 +2,24 @@ import asyncio
 import json
 import math
 import os
-import pickle
 import sqlite3
 import struct
 import threading
 import time
-import warnings
 from collections import deque
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 import numpy as np
+
+try:
+    import torch
+    from torch import nn
+except ImportError:
+    torch = None
+    nn = None
+
 try:
     from bleak import BleakClient, BleakScanner
     BLEAK_IMPORT_ERROR = None
@@ -35,29 +43,20 @@ DATA_CHAR_UUID = "FFF1"
 COMMAND_CHAR_UUID = "FFF2"
 BATTERY_CHAR_UUID = "FFF3"
 
-DEVICE_NAMES = ["XIAO_MG24_Sensor_01", "XIAO_MG24_Sensor_02"]
+DEVICE_NAMES = ["XIAO_MG24_Sensor_02"]
 
 EXPECTED_HEADER = {
-    "XIAO_MG24_Sensor_01": "im01",
     "XIAO_MG24_Sensor_02": "im02",
 }
 STATUS_HEADER = {
-    "XIAO_MG24_Sensor_01": "st01",
     "XIAO_MG24_Sensor_02": "st02",
 }
 NEUTRAL_HEADER = {
-    "XIAO_MG24_Sensor_01": "nt01",
     "XIAO_MG24_Sensor_02": "nt02",
 }
 VALIDATION_HEADER = {
-    "XIAO_MG24_Sensor_01": "va01",
     "XIAO_MG24_Sensor_02": "va02",
 }
-FUNCTIONAL_VALIDATION_HEADER = {
-    "XIAO_MG24_Sensor_01": "fp01",
-    "XIAO_MG24_Sensor_02": "fp02",
-}
-
 SAMPLE_SIZE_BYTES = 36
 SAMPLES_PER_NOTIFICATION = 5
 EXPECTED_NOTIFICATION_BYTES = SAMPLE_SIZE_BYTES * SAMPLES_PER_NOTIFICATION
@@ -80,22 +79,10 @@ STATIC_MARKER_AXIS_INDEX = int(os.getenv("STATIC_MARKER_AXIS_INDEX", "0"))
 STATIC_MARKER_EXPECTED_SIGN = int(os.getenv("STATIC_MARKER_EXPECTED_SIGN", "-1"))
 STATIC_MARKER_MIN_G = float(os.getenv("STATIC_MARKER_MIN_G", "0.55"))
 
-# Calibration collection windows.
-# At the expected 50 Hz rate these provide about 250 static samples and
-# 600 functional samples, which is sufficient for gravity orientation and
-# three deliberate thigh taps while keeping the patient-facing wait short.
+# Calibration collection window.
+# At the expected 50 Hz rate this provides about 250 static samples,
+# which is sufficient for gravity orientation while keeping the wait short.
 STATIC_CALIBRATION_WAIT_SEC = 5.0
-FUNCTIONAL_VALIDATION_WAIT_SEC = 12.0
-
-# Short thigh-pat functional placement check thresholds.
-# These are intentionally adjustable because axis directions depend on how the sensors are mounted.
-FUNCTIONAL_MIN_TOTAL_AMP_G = 0.15
-FUNCTIONAL_MCU1_Y_DOMINANCE_RATIO = 0.90
-FUNCTIONAL_MCU2_Z_DOMINANCE_RATIO = 1.05
-FUNCTIONAL_MCU2_MIN_TOTAL_TO_MCU1_RATIO = 1.15
-FUNCTIONAL_BASELINE_MIN_SIMILARITY = 0.75
-FUNCTIONAL_BASELINE_MIN_TOTAL_RATIO = 0.45
-FUNCTIONAL_BASELINE_MAX_TOTAL_RATIO = 2.20
 
 
 # ============================================================
@@ -110,9 +97,7 @@ STRIDE = int(WINDOW_SIZE * (1 - OVERLAP))
 STABILIZATION_SEC = 3.0
 STABILIZATION_SAMPLES = int(EXPECTED_FREQ * STABILIZATION_SEC)
 
-RISKY_ACTIVITIES = {"elbow_flexion", "shoulder_adduction"}
-# Give an audible warning every three consecutive risky predictions, but only
-# confirm and store a risky event after six consecutive risky predictions.
+RISKY_ACTIVITIES = {"elbow_flexion", "shoulder_adduction", "shoulder_abduction_adduction"}
 RISKY_BEEP_INTERVAL_WINDOWS = 3
 RISKY_CONFIRM_WINDOWS = 6
 SAFE_RESET_WINDOWS = 2
@@ -121,9 +106,24 @@ PREDICTION_RETENTION_DAYS = 7
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RISK_EVENTS_DB_PATH = os.path.join(BASE_DIR, "risky_events.db")
 CALIBRATION_BASELINES_PATH = os.path.join(BASE_DIR, "calibration_baselines.json")
+TCN_MODEL_PATH = Path(BASE_DIR).parent / "tcn_activity.pt"
 
-MODEL_PATH = os.path.join(BASE_DIR, "svm_rfe_model (1).pkl")
-SCALER_PATH = os.path.join(BASE_DIR, "scaler (1).pkl")
+DEFAULT_TCN_LABELS = [
+    "elbow_flexion",
+    "shoulder_abduction_adduction",
+    "sitting",
+    "standing",
+    "walking",
+]
+RAW_CHANNELS = [
+    "mcu1_ax", "mcu1_ay", "mcu1_az", "mcu1_gx", "mcu1_gy", "mcu1_gz",
+    "mcu2_ax", "mcu2_ay", "mcu2_az", "mcu2_gx", "mcu2_gy", "mcu2_gz",
+]
+DERIVED_CHANNELS = [
+    "mcu1_acc_mag", "mcu1_gyro_mag", "mcu2_acc_mag", "mcu2_gyro_mag",
+    "rel_ax", "rel_ay", "rel_az", "rel_gx", "rel_gy", "rel_gz",
+]
+TRAINING_CHANNELS = RAW_CHANNELS + DERIVED_CHANNELS
 
 # Battery voltage to percentage estimation for 1-cell Li-ion/LiPo battery.
 # The curve is intentionally non-linear and interpolated between points.
@@ -159,8 +159,6 @@ intentional_disconnects = set()
 
 neutral_vectors = {name: None for name in DEVICE_NAMES}
 validation_results = {name: None for name in DEVICE_NAMES}
-functional_results = {name: None for name in DEVICE_NAMES}
-functional_timestamps = {name: None for name in DEVICE_NAMES}
 
 battery_state = {
     name: {
@@ -179,9 +177,21 @@ paired_samples_seen = 0
 risky_counter = 0
 active_risky_class = None
 safe_counter = 0
+risk_event_latched = False
+pending_risky_event_class = None
 
-scaler = None
-svm_rfe_model = None
+tcn_model = None
+tcn_labels = DEFAULT_TCN_LABELS.copy()
+risky_activity_labels = {
+    label.strip().lower().replace(" ", "_").replace("-", "_")
+    for label in RISKY_ACTIVITIES
+}
+tcn_input_channels = None
+tcn_channel_names = None
+tcn_mean = None
+tcn_std = None
+active_window_size = WINDOW_SIZE
+active_stride = STRIDE
 
 timestamp_zero = None
 
@@ -197,63 +207,6 @@ CALIBRATION_BYPASS_REQUESTED = False
 
 main_event_loop = None
 data_ready_event = None
-
-
-# ============================================================
-# PART 5: LOAD TRAINED ML MODEL FILES
-# ============================================================
-def resolve_model_file(filename):
-    candidates = [
-        os.path.join(BASE_DIR, filename),
-        os.path.join(os.path.dirname(BASE_DIR), filename),
-    ]
-
-    for candidate in candidates:
-        if os.path.exists(candidate):
-            return candidate
-
-    return None
-
-
-def load_ml_objects():
-    global scaler, svm_rfe_model
-
-    scaler_path = resolve_model_file(os.path.basename(SCALER_PATH))
-    model_path = resolve_model_file(os.path.basename(MODEL_PATH))
-
-    if scaler_path is None:
-        raise FileNotFoundError(f"Missing file: {os.path.basename(SCALER_PATH)}")
-    if model_path is None:
-        raise FileNotFoundError(f"Missing file: {os.path.basename(MODEL_PATH)}")
-
-    with open(scaler_path, "rb") as f:
-        scaler = pickle.load(f)
-    with open(model_path, "rb") as f:
-        svm_rfe_model = pickle.load(f)
-
-    print("ML files loaded successfully.")
-
-
-# ============================================================
-# PART 6: FEATURE COLUMN ORDER
-# ============================================================
-def generate_default_feature_columns():
-    axes = [
-        "mcu1_ax", "mcu1_ay", "mcu1_az", "mcu1_gx", "mcu1_gy", "mcu1_gz",
-        "mcu2_ax", "mcu2_ay", "mcu2_az", "mcu2_gx", "mcu2_gy", "mcu2_gz",
-    ]
-    USE_ENERGY_FEATURES = True 
-    columns = []
-
-    for stat in ["mean", "std", "min", "max"]:
-        for axis in axes:
-            columns.append(f"{axis}_{stat}")
-
-    if USE_ENERGY_FEATURES:
-        for axis in axes:
-            columns.append(f"{axis}_energy")
-
-    return columns
 
 
 # ============================================================
@@ -359,8 +312,8 @@ def battery_notification_handler(device_name):
 
 
 def get_battery_values_for_csv():
-    b1 = battery_state.get("XIAO_MG24_Sensor_01", {})
-    b2 = battery_state.get("XIAO_MG24_Sensor_02", {})
+    b1 = battery_state.get(DEVICE_NAMES[0], {})
+    b2 = {}
     return b1, b2
 
 
@@ -368,10 +321,7 @@ def get_battery_snapshot():
     """Return a lightweight snapshot of the current battery state for the Flask API."""
     b1, b2 = get_battery_values_for_csv()
 
-    return {
-        "sensor1": dict(b1),
-        "sensor2": dict(b2),
-    }
+    return {"sensor1": dict(b1)}
 
 
 def reset_device_connection_state():
@@ -406,14 +356,6 @@ def save_account_baseline():
             name: list(neutral_vectors[name])
             for name in DEVICE_NAMES
             if neutral_vectors.get(name) is not None
-        },
-        "functional": {
-            name: {
-                key: functional_results[name][key]
-                for key in ("range_x", "range_y", "range_z", "total_amp")
-            }
-            for name in DEVICE_NAMES
-            if functional_results.get(name) is not None
         },
     }
 
@@ -451,88 +393,17 @@ def apply_static_account_baseline():
             result["interpretation"] = "Current orientation differs from the initial account baseline"
 
 
-def functional_signature(result):
-    values = [
-        float(result["range_x"]),
-        float(result["range_y"]),
-        float(result["range_z"]),
-        float(result["total_amp"]),
-    ]
-    magnitude = math.sqrt(sum(value * value for value in values))
-    return [value / max(magnitude, 1e-6) for value in values]
-
-
-def functional_matches_account_baseline():
-    baseline = load_account_baseline()
-    functional_baseline = baseline.get("functional", {}) if baseline else {}
-    comparisons = {}
-
-    for name in DEVICE_NAMES:
-        current = functional_results.get(name)
-        initial = functional_baseline.get(name)
-        if current is None or initial is None:
-            return False, comparisons
-
-        current_signature = functional_signature(current)
-        initial_signature = functional_signature(initial)
-        similarity = sum(
-            current_value * initial_value
-            for current_value, initial_value in zip(
-                current_signature, initial_signature
-            )
-        )
-        total_ratio = current["total_amp"] / max(float(initial["total_amp"]), 1e-6)
-        passed = (
-            similarity >= FUNCTIONAL_BASELINE_MIN_SIMILARITY
-            and FUNCTIONAL_BASELINE_MIN_TOTAL_RATIO
-            <= total_ratio
-            <= FUNCTIONAL_BASELINE_MAX_TOTAL_RATIO
-        )
-        comparisons[name] = {
-            "similarity": similarity,
-            "total_ratio": total_ratio,
-            "passed": passed,
-        }
-
-    return all(item["passed"] for item in comparisons.values()), comparisons
-
-
 def get_calibration_validation_snapshot():
-    """Return overall static orientation and functional placement results."""
+    """Return overall static orientation result."""
     static_values = [validation_results.get(name) for name in DEVICE_NAMES]
-    functional_values = [functional_results.get(name) for name in DEVICE_NAMES]
 
     static_passed = None
     if all(result is not None for result in static_values):
         static_passed = all(bool(result.get("passed")) for result in static_values)
 
-    functional_passed = None
-    functional_comparison = {}
-    if all(result is not None for result in functional_values):
-        r1, r2 = functional_values
-        movement_enough = (
-            r1["total_amp"] >= FUNCTIONAL_MIN_TOTAL_AMP_G
-            and r2["total_amp"] >= FUNCTIONAL_MIN_TOTAL_AMP_G
-        )
-        wrist_ranges_larger = (
-            r2["range_x"] > r1["range_x"]
-            and r2["range_y"] > r1["range_y"]
-            and r2["range_z"] > r1["range_z"]
-        )
-        wrist_total_larger = (
-            r2["total_amp"]
-            >= FUNCTIONAL_MCU2_MIN_TOTAL_TO_MCU1_RATIO * r1["total_amp"]
-        )
-        functional_passed = movement_enough and wrist_ranges_larger and wrist_total_larger
-        if not CALIBRATION_ENROLL_BASELINE:
-            baseline_passed, functional_comparison = functional_matches_account_baseline()
-            functional_passed = functional_passed and baseline_passed
-
     return {
         "static_passed": static_passed,
-        "functional_passed": functional_passed,
         "baseline_available": load_account_baseline() is not None,
-        "functional_comparison": functional_comparison,
     }
 
 
@@ -568,9 +439,7 @@ def request_calibration_retry():
     global CALIBRATION_RETRY_REQUESTED
     if CALIBRATION_PHASE not in {
         "ready_to_stand",
-        "ready_for_functional",
         "static_failed",
-        "functional_failed",
     }:
         return False
     CALIBRATION_RETRY_REQUESTED = True
@@ -582,11 +451,8 @@ def request_calibration_bypass():
     global CALIBRATION_BYPASS_REQUESTED
     if CALIBRATION_PHASE not in {
         "ready_to_stand",
-        "ready_for_functional",
         "static",
         "static_failed",
-        "functional",
-        "functional_failed",
     }:
         return False
     CALIBRATION_BYPASS_REQUESTED = True
@@ -665,8 +531,8 @@ def init_prediction_database():
 
 
 def get_neutral_values_for_storage():
-    n1 = neutral_vectors.get("XIAO_MG24_Sensor_01")
-    n2 = neutral_vectors.get("XIAO_MG24_Sensor_02")
+    n1 = neutral_vectors.get(DEVICE_NAMES[0])
+    n2 = None
     
     if n1 is None:
         n1 = ("", "", "")
@@ -804,7 +670,7 @@ def handle_disconnect(name):
 def reset_stream_state():
     global expected_seq, pair_seq, prev_mcu_diff, first_signed_mcu_diff
     global new_samples_since_last_prediction, paired_samples_seen, risky_counter
-    global active_risky_class, safe_counter
+    global active_risky_class, safe_counter, risk_event_latched, pending_risky_event_class
     global timestamp_zero
 
     expected_seq = pair_seq = 0
@@ -812,6 +678,8 @@ def reset_stream_state():
     new_samples_since_last_prediction = paired_samples_seen = risky_counter = 0
     active_risky_class = None
     safe_counter = 0
+    risk_event_latched = False
+    pending_risky_event_class = None
     timestamp_zero = None
 
     paired_sample_buffer.clear()
@@ -851,17 +719,6 @@ def handle_special_packet(device_name, decoded):
             "interpretation": interpret_placement_angle(angle_deg, marker_down),
         }
         return True
-    if header == FUNCTIONAL_VALIDATION_HEADER[device_name]:
-        # Transmitter sends acc peak-to-peak ranges in acc[0:3] and total amplitude in gyro[0].
-        functional_results[device_name] = {
-            "range_x": imu[0],
-            "range_y": imu[1],
-            "range_z": imu[2],
-            "total_amp": imu[3],
-            "received_at": datetime.now().isoformat(),
-            "requested_at": functional_timestamps.get(device_name),
-        }
-        return True
     return False
 
 
@@ -889,14 +746,8 @@ def interpret_placement_angle(angle_deg, marker_down=True):
 
 
 def print_validation_summary():
-    r1 = validation_results.get("XIAO_MG24_Sensor_01")
-    r2 = validation_results.get("XIAO_MG24_Sensor_02")
-
     print("\n========== PLACEMENT VALIDATION RESULT ==========")
-    for name, label in [
-        ("XIAO_MG24_Sensor_01", "MCU1 upper arm sensor"),
-        ("XIAO_MG24_Sensor_02", "MCU2 wrist sensor"),
-    ]:
+    for name, label in [(DEVICE_NAMES[0], "Wearable sensor")]:
         result = validation_results.get(name)
         if result is None:
             print(f"{label}: No validation result received.")
@@ -907,17 +758,17 @@ def print_validation_summary():
                 f"{result['interpretation']}"
             )
 
-    if r1 and r1["passed"] and r2 and r2["passed"]:
-        print("Feedback: MCU1 pass, MCU2 pass -> Proceed to real-time prediction.\n")
-        return True
-    if r1 and not r1["passed"] and r2 and r2["passed"]:
-        print("Feedback: MCU1 fail, MCU2 pass -> Re-adjust upper arm sensor.\n")
-        return False
-    if r1 and r1["passed"] and r2 and not r2["passed"]:
-        print("Feedback: MCU1 pass, MCU2 fail -> Re-adjust wrist sensor.\n")
-        return False
-    print("Feedback: MCU1 fail, MCU2 fail -> Re-wear both sensors and repeat neutral pose.\n")
-    return False
+    passed = all(
+        validation_results.get(name) is not None
+        and bool(validation_results[name].get("passed"))
+        for name in DEVICE_NAMES
+    )
+    print(
+        "Feedback: Sensor placement pass -> Proceed to real-time prediction.\n"
+        if passed
+        else "Feedback: Sensor placement fail -> Re-adjust the sensor and repeat neutral pose.\n"
+    )
+    return passed
 
 
 async def enrol_static_neutral_baseline(client_map):
@@ -944,95 +795,11 @@ async def validate_static_neutral_placement(client_map):
     return print_validation_summary()
 
 
-def print_functional_validation_summary():
-    r1 = functional_results.get("XIAO_MG24_Sensor_01")
-    r2 = functional_results.get("XIAO_MG24_Sensor_02")
-
-    print("\n========== FUNCTIONAL ANATOMICAL PLACEMENT VALIDATION RESULT ==========")
-    if r1 is None:
-        print("MCU1 upper arm sensor: No functional result received.")
-    else:
-        ts_info = f" (requested at {r1.get('requested_at')})" if r1.get('requested_at') else ""
-        recv_info = f" received at {r1.get('received_at')}" if r1.get('received_at') else ""
-        print(
-            "MCU1 upper arm sensor ranges: "
-            f"X={r1['range_x']:.3f} g, Y={r1['range_y']:.3f} g, "
-            f"Z={r1['range_z']:.3f} g, total={r1['total_amp']:.3f} g{ts_info}{recv_info}"
-        )
-
-    if r2 is None:
-        print("MCU2 wrist sensor: No functional result received.")
-    else:
-        ts_info = f" (requested at {r2.get('requested_at')})" if r2.get('requested_at') else ""
-        recv_info = f" received at {r2.get('received_at')}" if r2.get('received_at') else ""
-        print(
-            "MCU2 wrist sensor ranges: "
-            f"X={r2['range_x']:.3f} g, Y={r2['range_y']:.3f} g, "
-            f"Z={r2['range_z']:.3f} g, total={r2['total_amp']:.3f} g{ts_info}{recv_info}"
-        )
-
-    if r1 is None or r2 is None:
-        print("Feedback: Missing functional validation result -> repeat the thigh-pat check.\n")
-        return False
-
-    movement_enough = (r1["total_amp"] >= FUNCTIONAL_MIN_TOTAL_AMP_G and
-                       r2["total_amp"] >= FUNCTIONAL_MIN_TOTAL_AMP_G)
-    # 2. NEW LOGIC: Check if MCU2 (wrist) ranges are larger than MCU1 (arm) for ALL axes
-    mcu2_x_larger = r2["range_x"] > r1["range_x"]
-    mcu2_y_larger = r2["range_y"] > r1["range_y"]
-    mcu2_z_larger = r2["range_z"] > r1["range_z"]
-    mcu2_all_larger = mcu2_x_larger and mcu2_y_larger and mcu2_z_larger
-    
-    # 3. Check if total amplitude is larger on MCU2
-    wrist_larger_ok = (r2["total_amp"] >= FUNCTIONAL_MCU2_MIN_TOTAL_TO_MCU1_RATIO * r1["total_amp"])
-
-    print("Functional criteria:")
-    print(f"- Movement amplitude sufficient: {'PASS' if movement_enough else 'FAIL'}")
-    print(f"- MCU1 expected upper-arm X-axis dominance: {'PASS' if mcu2_x_larger else 'FAIL'}")
-    print(f"- MCU1 expected upper-arm Y-axis dominance: {'PASS' if mcu2_y_larger else 'FAIL'}")
-    print(f"- MCU1 expected upper-arm Z-axis dominance: {'PASS' if mcu2_z_larger else 'FAIL'}")
-    print(f"- MCU2 wrist total amplitude greater than MCU1 upper-arm amplitude: {'PASS' if wrist_larger_ok else 'FAIL'}")
-
-    if movement_enough and mcu2_all_larger and wrist_larger_ok:
-        print("Feedback: Functional placement check PASS -> anatomical placement is consistent.\n")
-        return True
-
-    # Extra diagnosis for the common swapped-sensor case.
-    possible_swap = (r1["total_amp"] > r2["total_amp"] and
-                     r1["range_z"] >= r1["range_y"] and
-                     r2["range_y"] >= r2["range_z"])
-    
-    if possible_swap:
-        print("Feedback: Functional placement check FAIL -> possible MCU1/MCU2 swapped. MCU1 may be at wrist and MCU2 may be at upper arm.\n")
-    elif not wrist_larger_ok:
-        print("Feedback: Functional placement check FAIL -> wrist sensor movement is not larger than upper-arm sensor. Check whether MCU2 is really at the wrist.\n")
-    elif not mcu2_all_larger:
-        print("Feedback: Functional placement check FAIL -> MCU2 (wrist) movement was not entirely larger than MCU1 (upper arm) on all axes. Check orientation.\n")
-    else:
-        print("Feedback: Functional placement check FAIL -> repeat the thigh-pat movement more consistently.\n")
-    
-    return False
-
-async def validate_functional_anatomical_placement(client_map):
-    print("\n========== FUNCTIONAL ANATOMICAL PLACEMENT VALIDATION ==========")
-    print("Gently pat/touch the front thigh for a few seconds by moving the forearm forward and backward.")
-    print("This check does NOT save anything into EEPROM; it only verifies MCU1/MCU2 anatomical placement.")
-
-    for name in DEVICE_NAMES:
-        functional_results[name] = None
-
-    await send_to_all(client_map, b"CHECK_FUNC_PLACE")
-    await asyncio.sleep(FUNCTIONAL_VALIDATION_WAIT_SEC)
-    await ensure_clients_connected(client_map, stage="functional anatomical placement validation")
-    return print_functional_validation_summary()
-
-
 async def automatic_calibration_sequence(client_map):
-    """Automatically request static then functional calibration with short user notifications.
+    """Automatically request static calibration with short user notifications.
 
     Sequence:
     - Notify user to stand still for ~5s, send ENROLL_NEUTRAL, wait, then GET_NEUTRAL
-    - Notify user to tap laps ~5 times (~5s), send CHECK_FUNC_PLACE and wait
     """
     global CALIBRATION_PHASE, CALIBRATION_MESSAGE, CALIBRATION_DEADLINE
     global CALIBRATION_BYPASS_REQUESTED
@@ -1043,7 +810,7 @@ async def automatic_calibration_sequence(client_map):
 
     CALIBRATION_PHASE = "ready_to_stand"
     CALIBRATION_MESSAGE = (
-        "Both sensors are connected. Stand comfortably with your PICC arm "
+        "The wearable sensor is connected. Stand comfortably with your PICC arm "
         "relaxed beside your body, then tap I understand to begin calibration."
     )
     CALIBRATION_DEADLINE = None
@@ -1057,7 +824,6 @@ async def automatic_calibration_sequence(client_map):
     for name in DEVICE_NAMES:
         neutral_vectors[name] = None
         validation_results[name] = None
-        functional_results[name] = None
 
     if CALIBRATION_ENROLL_BASELINE:
         CALIBRATION_PHASE = "static"
@@ -1073,6 +839,7 @@ async def automatic_calibration_sequence(client_map):
         except Exception:
             pass
         await asyncio.sleep(1.0)
+        save_account_baseline()
     else:
         while SESSION_ACTIVE:
             for name in DEVICE_NAMES:
@@ -1093,69 +860,13 @@ async def automatic_calibration_sequence(client_map):
 
             CALIBRATION_PHASE = "static_failed"
             CALIBRATION_MESSAGE = (
-                "Static calibration differs from your initial baseline. Check that each sensor marker points down toward the earth."
+                "Static calibration differs from your initial baseline. Check that the sensor marker points down toward the earth."
             )
             CALIBRATION_DEADLINE = None
             if not await wait_for_calibration_retry():
                 return False
             if CALIBRATION_BYPASS_REQUESTED:
                 return complete_calibration_bypass()
-
-    # Functional calibration
-    while SESSION_ACTIVE:
-        for name in DEVICE_NAMES:
-            functional_results[name] = None
-        CALIBRATION_PHASE = "ready_for_functional"
-        CALIBRATION_MESSAGE = (
-            "Get ready to gently pat the front of your thigh with your PICC arm. "
-            "Tap I understand when you are ready to begin functional calibration."
-        )
-        CALIBRATION_DEADLINE = None
-        if not await wait_for_calibration_retry():
-            return False
-        if CALIBRATION_BYPASS_REQUESTED:
-            return complete_calibration_bypass()
-        await ensure_clients_connected(client_map, stage="functional calibration preparation")
-
-        CALIBRATION_PHASE = "functional"
-        CALIBRATION_MESSAGE = "Gently tap your thigh with the PICC arm for functional calibration."
-        CALIBRATION_DEADLINE = time.monotonic() + FUNCTIONAL_VALIDATION_WAIT_SEC
-        # record the requested timestamp so backend can align received packets
-        ts = datetime.now().isoformat()
-        for name in DEVICE_NAMES:
-            functional_timestamps[name] = ts
-        try:
-            await send_to_all(client_map, b"CHECK_FUNC_PLACE")
-        except Exception:
-            pass
-        await asyncio.sleep(FUNCTIONAL_VALIDATION_WAIT_SEC)
-        await ensure_clients_connected(client_map, stage="automatic functional validation")
-
-        if CALIBRATION_ENROLL_BASELINE:
-            if all(functional_results.get(name) is not None for name in DEVICE_NAMES):
-                save_account_baseline()
-                break
-            CALIBRATION_MESSAGE = (
-                "Functional baseline data was incomplete. Repeating the baseline recording."
-            )
-            CALIBRATION_DEADLINE = None
-            await asyncio.sleep(1.0)
-            continue
-
-        functional_result = get_calibration_validation_snapshot().get("functional_passed")
-        if functional_result is True:
-            break
-
-        CALIBRATION_PHASE = "functional_failed"
-        CALIBRATION_MESSAGE = (
-            "Functional calibration failed. Sensor 1 and Sensor 2 may be swapped. "
-            "Check that Sensor 1 is on the upper arm and Sensor 2 is on the wrist."
-        )
-        CALIBRATION_DEADLINE = None
-        if not await wait_for_calibration_retry():
-            return False
-        if CALIBRATION_BYPASS_REQUESTED:
-            return complete_calibration_bypass()
 
     if not SESSION_ACTIVE:
         return False
@@ -1164,49 +875,6 @@ async def automatic_calibration_sequence(client_map):
     CALIBRATION_MESSAGE = "Calibration complete. Monitoring is starting."
     CALIBRATION_DEADLINE = None
     return True
-
-
-# ============================================================
-# PART 13: PREPROCESSING & FEATURE EXTRACTION
-# ============================================================
-def preprocess_live_window(window_matrix):
-    processed_window = np.copy(window_matrix)
-    
-    # Accel indices: mcu1(0,1,2), mcu2(6,7,8)
-    acc_indices = [0, 1, 2, 6, 7, 8]
-    # Gyro indices: mcu1(3,4,5), mcu2(9,10,11)
-    gyro_indices = [3, 4, 5, 9, 10, 11]
-    
-    acc_data = processed_window[:, acc_indices]
-    gyro_data = processed_window[:, gyro_indices]
-    
-    acc_mean = np.mean(acc_data)
-    acc_std = np.std(acc_data)
-    gyro_mean = np.mean(gyro_data)
-    gyro_std = np.std(gyro_data)
-    
-    # Prevent division by zero if completely still
-    if acc_std == 0: acc_std = 1e-6
-    if gyro_std == 0: gyro_std = 1e-6
-
-    processed_window[:, acc_indices] = (acc_data - acc_mean) / acc_std
-    processed_window[:, gyro_indices] = (gyro_data - gyro_mean) / gyro_std
-    
-    return processed_window
-
-
-def compute_energy_per_axis(window):
-    return np.sum(np.square(window), axis=0)
-
-
-def extract_live_features(window_matrix):
-    feats = []
-    feats.extend(np.mean(window_matrix, axis=0))
-    feats.extend(np.std(window_matrix, axis=0))
-    feats.extend(np.min(window_matrix, axis=0))
-    feats.extend(np.max(window_matrix, axis=0))
-    feats.extend(compute_energy_per_axis(window_matrix))
-    return np.array(feats, dtype=float)
 
 
 def format_timestamp():
@@ -1220,63 +888,355 @@ def format_timestamp():
     return int((now - timestamp_zero) * 1000)
 
 # ============================================================
-# PART 14: REAL-TIME PREDICTION 
+# PART 14: TCN ACTIVITY INFERENCE
 # ============================================================
-def run_prediction_if_ready():
-    global new_samples_since_last_prediction, risky_counter
-    global active_risky_class, safe_counter
 
-    if paired_samples_seen < STABILIZATION_SAMPLES: return
-    if len(paired_sample_buffer) < WINDOW_SIZE: return
-    if new_samples_since_last_prediction < STRIDE: return
+if nn is not None:
+    class Block(nn.Module):
+        def __init__(self, width, dilation):
+            super().__init__()
+            padding = dilation
+            self.net = nn.Sequential(
+                nn.Conv1d(width, width, 3, padding=padding, dilation=dilation),
+                nn.ReLU(),
+                nn.BatchNorm1d(width),
+                nn.Dropout(0.1),
+                nn.Conv1d(width, width, 3, padding=padding, dilation=dilation),
+                nn.ReLU(),
+                nn.BatchNorm1d(width),
+                nn.Dropout(0.1),
+            )
 
-    new_samples_since_last_prediction = 0
-    window_matrix = np.array(paired_sample_buffer, dtype=float)
-    raw_received_timestamp = format_timestamp()
-    
-    # --- PREPROCESS DATA TO MATCH TRAINING PIPELINE ---
-    cleaned_window = preprocess_live_window(window_matrix)
+        def forward(self, x):
+            return x + self.net(x)
 
-    # --- EXTRACT FEATURES FROM CLEANED DATA ---
-    feature_vector = extract_live_features(cleaned_window)
-    feature_extraction_timestamp = format_timestamp()
 
-    # High-Performance NumPy array prediction instead of Pandas DataFrame.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        features_scaled = scaler.transform(feature_vector.reshape(1, -1))
-        prediction = svm_rfe_model.predict(features_scaled)[0]
+    class TCN(nn.Module):
+        def __init__(self, input_channels=None, output_classes=6):
+            super().__init__()
+            width = 32
+            input_count = input_channels or 12
+            self.tcn = nn.Sequential(
+                nn.Conv1d(input_count, width, 1),
+                Block(width, 1),
+                Block(width, 2),
+                Block(width, 4),
+                Block(width, 8),
+                Block(width, 16),
+            )
+            self.head = nn.Linear(width, output_classes)
 
-    model_prediction_timestamp = format_timestamp()
+        def forward(self, x):
+            return self.head(self.tcn(x).mean(-1))
+else:
+    TCN = None
 
-    if prediction in RISKY_ACTIVITIES:
-        if prediction == active_risky_class:
+
+def normalize_activity_label(label):
+    return str(label).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def load_tcn_model(model_path):
+    if torch is None:
+        raise RuntimeError(
+            "Missing Python dependency 'torch'. Install PyTorch in the backend Python environment."
+        )
+    if not model_path.exists():
+        raise FileNotFoundError(f"TCN model file not found: {model_path}")
+
+    try:
+        loaded_model = torch.jit.load(str(model_path), map_location="cpu")
+        loaded_model.eval()
+        print(f"[MODEL] Loaded TorchScript TCN model: {model_path}")
+        return loaded_model
+    except Exception as jit_error:
+        try:
+            try:
+                loaded_model = torch.load(str(model_path), map_location="cpu", weights_only=False)
+            except TypeError:
+                loaded_model = torch.load(str(model_path), map_location="cpu")
+        except Exception as load_error:
+            raise RuntimeError(
+                "Unable to load tcn_activity.pt as TorchScript, a checkpoint, or a PyTorch module."
+            ) from load_error
+
+        if isinstance(loaded_model, dict):
+            state_dict = loaded_model.get("state_dict") or loaded_model.get("model_state_dict")
+            if state_dict is None:
+                keys_preview = ", ".join(list(loaded_model.keys())[:6])
+                raise RuntimeError(
+                    "tcn_activity.pt is a dictionary but does not contain a state_dict. "
+                    f"First keys: {keys_preview}"
+                ) from jit_error
+
+            checkpoint_labels = loaded_model.get("labels")
+            checkpoint_channels = loaded_model.get("channels")
+            output_classes = (
+                len(checkpoint_labels)
+                if isinstance(checkpoint_labels, (list, tuple)) and checkpoint_labels
+                else len(DEFAULT_TCN_LABELS)
+            )
+            input_channels = (
+                len(checkpoint_channels)
+                if isinstance(checkpoint_channels, (list, tuple)) and checkpoint_channels
+                else None
+            )
+            if input_channels is None:
+                first_weight = state_dict.get("tcn.0.weight")
+                if first_weight is None:
+                    first_weight = state_dict.get("module.tcn.0.weight")
+                if first_weight is not None and hasattr(first_weight, "shape"):
+                    input_channels = int(first_weight.shape[1])
+
+            if TCN is None:
+                raise RuntimeError("PyTorch nn is not available, so the TCN checkpoint cannot be rebuilt.")
+            rebuilt_model = TCN(input_channels=input_channels, output_classes=output_classes)
+            rebuilt_model.load_state_dict(state_dict)
+            rebuilt_model.eval()
+            rebuilt_model.tcn_metadata = {
+                "labels": checkpoint_labels,
+                "channels": checkpoint_channels,
+                "input_channels": input_channels,
+                "mean": loaded_model.get("mean"),
+                "std": loaded_model.get("std"),
+                "window": loaded_model.get("window"),
+                "stride": loaded_model.get("stride"),
+            }
+            print(f"[MODEL] Rebuilt TCN from checkpoint: {model_path}")
+            return rebuilt_model
+
+        if not callable(loaded_model):
+            raise RuntimeError(f"Loaded TCN object is not callable: {type(loaded_model)!r}") from jit_error
+
+        loaded_model.eval()
+        print(f"[MODEL] Loaded PyTorch TCN model: {model_path}")
+        return loaded_model
+
+
+def infer_tcn_input_channels(loaded_model):
+    metadata = getattr(loaded_model, "tcn_metadata", None)
+    if isinstance(metadata, dict):
+        if metadata.get("input_channels"):
+            return int(metadata["input_channels"])
+        channels = metadata.get("channels")
+        if isinstance(channels, (list, tuple)) and channels:
+            return len(channels)
+
+    try:
+        first_conv = loaded_model.tcn[0]
+        weight = getattr(first_conv, "weight", None)
+        if weight is not None and hasattr(weight, "shape"):
+            return int(weight.shape[1])
+    except Exception:
+        pass
+
+    return None
+
+
+def infer_tcn_channel_names(loaded_model):
+    metadata = getattr(loaded_model, "tcn_metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    channels = metadata.get("channels")
+    if isinstance(channels, (list, tuple)) and channels:
+        return [str(channel) for channel in channels]
+    return None
+
+
+def tcn_metadata_array(loaded_model, key):
+    metadata = getattr(loaded_model, "tcn_metadata", None)
+    if not isinstance(metadata, dict) or metadata.get(key) is None:
+        return None
+    value = metadata[key]
+    if torch is not None and torch.is_tensor(value):
+        value = value.detach().cpu().numpy()
+    array = np.asarray(value, dtype=np.float32)
+    if array.ndim == 1:
+        array = array.reshape(1, -1)
+    return array
+
+
+def tcn_metadata_int(loaded_model, key):
+    metadata = getattr(loaded_model, "tcn_metadata", None)
+    if not isinstance(metadata, dict) or metadata.get(key) is None:
+        return None
+    value = metadata[key]
+    if torch is not None and torch.is_tensor(value):
+        value = value.item()
+    return int(value)
+
+
+def configure_tcn_model():
+    global tcn_model, tcn_labels, risky_activity_labels, tcn_input_channels
+    global tcn_channel_names, tcn_mean, tcn_std, active_window_size, active_stride
+    global paired_sample_buffer
+
+    tcn_model = load_tcn_model(TCN_MODEL_PATH)
+    metadata = getattr(tcn_model, "tcn_metadata", None)
+    if isinstance(metadata, dict) and metadata.get("labels"):
+        tcn_labels = [str(label) for label in metadata["labels"]]
+    else:
+        tcn_labels = DEFAULT_TCN_LABELS.copy()
+
+    risky_activity_labels = {normalize_activity_label(label) for label in RISKY_ACTIVITIES}
+    tcn_input_channels = infer_tcn_input_channels(tcn_model)
+    tcn_channel_names = infer_tcn_channel_names(tcn_model)
+    tcn_mean = tcn_metadata_array(tcn_model, "mean")
+    tcn_std = tcn_metadata_array(tcn_model, "std")
+    active_window_size = tcn_metadata_int(tcn_model, "window") or WINDOW_SIZE
+    active_stride = tcn_metadata_int(tcn_model, "stride") or STRIDE
+    paired_sample_buffer = deque(maxlen=active_window_size)
+
+    print("[MODEL] Labels: " + ", ".join(tcn_labels))
+    print("[MODEL] Risky labels: " + ", ".join(sorted(risky_activity_labels)))
+    print(f"[MODEL] Input channels: {tcn_input_channels or 'unknown'}")
+    if tcn_channel_names:
+        print("[MODEL] Channel order: " + ", ".join(tcn_channel_names))
+    print(f"[MODEL] Window={active_window_size} samples, stride={active_stride} samples")
+    print(
+        "[MODEL] Normalization: "
+        + ("checkpoint mean/std" if tcn_mean is not None and tcn_std is not None else "none")
+    )
+
+
+def build_training_channel_matrix(window_matrix):
+    if window_matrix.shape[1] != 12:
+        raise RuntimeError(f"Expected 12 raw IMU channels before derived-channel building, got {window_matrix.shape[1]}.")
+
+    mcu1_acc = window_matrix[:, 0:3]
+    mcu1_gyro = window_matrix[:, 3:6]
+    mcu2_acc = window_matrix[:, 6:9]
+    mcu2_gyro = window_matrix[:, 9:12]
+
+    channel_map = {name: window_matrix[:, i] for i, name in enumerate(RAW_CHANNELS)}
+    channel_map.update(
+        {
+            "mcu1_acc_mag": np.linalg.norm(mcu1_acc, axis=1),
+            "mcu1_gyro_mag": np.linalg.norm(mcu1_gyro, axis=1),
+            "mcu2_acc_mag": np.linalg.norm(mcu2_acc, axis=1),
+            "mcu2_gyro_mag": np.linalg.norm(mcu2_gyro, axis=1),
+            "rel_ax": window_matrix[:, 6] - window_matrix[:, 0],
+            "rel_ay": window_matrix[:, 7] - window_matrix[:, 1],
+            "rel_az": window_matrix[:, 8] - window_matrix[:, 2],
+            "rel_gx": window_matrix[:, 9] - window_matrix[:, 3],
+            "rel_gy": window_matrix[:, 10] - window_matrix[:, 4],
+            "rel_gz": window_matrix[:, 11] - window_matrix[:, 5],
+        }
+    )
+    return {name: np.asarray(values, dtype=np.float32) for name, values in channel_map.items()}
+
+
+def coerce_window_to_tcn_channels(window_matrix):
+    expected_channels = tcn_input_channels or window_matrix.shape[1]
+    actual_channels = window_matrix.shape[1]
+
+    if actual_channels == expected_channels:
+        return window_matrix
+
+    if actual_channels == 12 and expected_channels in {22, 26}:
+        channel_names = tcn_channel_names or TRAINING_CHANNELS[:expected_channels]
+        channel_map = build_training_channel_matrix(window_matrix)
+        missing = [name for name in channel_names if name not in channel_map]
+        if missing:
+            raise RuntimeError(f"Cannot build live TCN channels missing from training map: {missing}")
+        return np.column_stack([channel_map[name] for name in channel_names]).astype(np.float32)
+
+    raise RuntimeError(
+        f"TCN model expects {expected_channels} channels, but live data has {actual_channels}."
+    )
+
+
+def prepare_tcn_input(window_matrix):
+    if torch is None:
+        raise RuntimeError("Missing Python dependency 'torch'.")
+
+    x = coerce_window_to_tcn_channels(window_matrix.astype(np.float32, copy=True))
+    if tcn_mean is not None and tcn_std is not None:
+        if tcn_mean.shape[-1] != x.shape[1] or tcn_std.shape[-1] != x.shape[1]:
+            raise RuntimeError(
+                f"Saved normalization has {tcn_mean.shape[-1]} channels, but live input has {x.shape[1]} channels."
+            )
+        x = (x - tcn_mean) / np.where(tcn_std < 1e-6, 1.0, tcn_std)
+
+    return torch.from_numpy(x.T[None, :, :])
+
+
+def decode_tcn_prediction(output):
+    if isinstance(output, (tuple, list)):
+        output = output[0]
+    if not torch.is_tensor(output):
+        output = torch.as_tensor(output)
+
+    output = output.detach().cpu()
+    if output.ndim == 3:
+        output = output[:, :, -1]
+    elif output.ndim == 1:
+        output = output.unsqueeze(0)
+    if output.ndim != 2:
+        raise RuntimeError(f"Unsupported TCN output shape: {tuple(output.shape)}")
+
+    probabilities = torch.softmax(output, dim=1)
+    confidence_tensor, pred_tensor = probabilities.max(dim=1)
+    pred_idx = int(pred_tensor.item())
+    confidence = float(confidence_tensor.item())
+
+    top_count = min(3, probabilities.shape[1])
+    top_values, top_indices = torch.topk(probabilities[0], k=top_count)
+    top_parts = []
+    for value, index in zip(top_values, top_indices):
+        class_index = int(index.item())
+        label = tcn_labels[class_index] if class_index < len(tcn_labels) else f"class_{class_index}"
+        top_parts.append(f"{label}:{float(value.item()):.2f}")
+    top_summary = ", ".join(top_parts)
+
+    prediction = tcn_labels[pred_idx] if pred_idx < len(tcn_labels) else f"class_{pred_idx}"
+    return prediction, pred_idx, confidence, top_summary
+
+
+def update_alarm_state(prediction):
+    global risky_counter, active_risky_class, safe_counter, risk_event_latched
+    global pending_risky_event_class
+
+    normalized_prediction = normalize_activity_label(prediction)
+    event_to_save = None
+
+    if normalized_prediction in risky_activity_labels:
+        if normalized_prediction == active_risky_class:
             risky_counter += 1
         else:
-            active_risky_class = prediction
+            active_risky_class = normalized_prediction
             risky_counter = 1
+            risk_event_latched = False
+            pending_risky_event_class = None
         safe_counter = 0
         risk_status = "Risky"
     else:
-        if prediction == "standing":
+        if normalized_prediction == "standing":
+            event_to_save = pending_risky_event_class
             risky_counter = 0
             active_risky_class = None
             safe_counter = 0
+            risk_event_latched = False
+            pending_risky_event_class = None
         else:
             safe_counter += 1
             if safe_counter >= SAFE_RESET_WINDOWS:
+                event_to_save = pending_risky_event_class
                 risky_counter = 0
                 active_risky_class = None
                 safe_counter = 0
+                risk_event_latched = False
+                pending_risky_event_class = None
         risk_status = "Safe"
 
     current_prediction_is_active_risk = (
-        prediction in RISKY_ACTIVITIES
-        and prediction == active_risky_class
+        normalized_prediction in risky_activity_labels
+        and normalized_prediction == active_risky_class
     )
     alert_triggered = (
         current_prediction_is_active_risk
-        and risky_counter == RISKY_CONFIRM_WINDOWS
+        and risky_counter >= RISKY_CONFIRM_WINDOWS
+        and not risk_event_latched
     )
     beep_triggered = (
         current_prediction_is_active_risk
@@ -1288,22 +1248,36 @@ def run_prediction_if_ready():
         beep_triggered = play_alert_sound_async()
 
     if alert_triggered:
-        save_risky_event(prediction)
+        risk_event_latched = True
+        pending_risky_event_class = active_risky_class
 
-    if current_prediction_is_active_risk and risky_counter >= RISKY_CONFIRM_WINDOWS:
-        print(
-            f"[raw={raw_received_timestamp}] [features={feature_extraction_timestamp}] "
-            f"[model={model_prediction_timestamp}] Activity: {prediction} | "
-            f"Status: RISKY EVENT DETECTED | "
-            f"Alert: {'Beep' if beep_triggered else 'No'}"
-        )
-    else:
-        print(
-            f"[raw={raw_received_timestamp}] [features={feature_extraction_timestamp}] "
-            f"[model={model_prediction_timestamp}] Activity: {prediction} | "
-            f"Status: {risk_status} | "
-            f"Alert: {'Warning beep' if beep_triggered else 'No'}"
-        )
+    return risk_status, beep_triggered, alert_triggered, event_to_save
+
+
+def run_prediction_if_ready():
+    global new_samples_since_last_prediction
+
+    if paired_samples_seen < STABILIZATION_SAMPLES:
+        return
+    if len(paired_sample_buffer) < active_window_size:
+        return
+    if new_samples_since_last_prediction < active_stride:
+        return
+
+    new_samples_since_last_prediction = 0
+    raw_received_timestamp = format_timestamp()
+    feature_extraction_timestamp = format_timestamp()
+    window_matrix = np.array(paired_sample_buffer, dtype=np.float32)
+
+    inference_start = time.perf_counter()
+    tensor = prepare_tcn_input(window_matrix)
+    with torch.no_grad():
+        output = tcn_model(tensor)
+    inference_ms = (time.perf_counter() - inference_start) * 1000.0
+
+    prediction, pred_idx, confidence, top_summary = decode_tcn_prediction(output)
+    model_prediction_timestamp = format_timestamp()
+    risk_status, beep_triggered, alert_triggered, event_to_save = update_alarm_state(prediction)
 
     log_prediction(
         raw_received_timestamp,
@@ -1315,6 +1289,25 @@ def run_prediction_if_ready():
         alert_triggered,
         risky_counter,
     )
+    if event_to_save:
+        save_risky_event(event_to_save)
+
+    if alert_triggered:
+        status_text = "RISKY EVENT CONFIRMED"
+    elif risk_status == "Risky":
+        status_text = f"Risk warning {risky_counter}/{RISKY_CONFIRM_WINDOWS}"
+    else:
+        status_text = "Safe"
+
+    print(
+        f"[raw={raw_received_timestamp} pred={model_prediction_timestamp}] "
+        f"Activity={prediction} idx={pred_idx} conf={confidence:.2f} | "
+        f"{status_text} | Counter={risky_counter} | "
+        f"Latched={'yes' if risk_event_latched else 'no'} | "
+        f"SavedEpisode={event_to_save or '-'} | "
+        f"Beep={'yes' if beep_triggered else 'no'} | "
+        f"Top=[{top_summary}] | Inference={inference_ms:.1f} ms"
+    )
 
 
 # ============================================================
@@ -1323,74 +1316,51 @@ def run_prediction_if_ready():
 def pair_samples_if_ready():
     global pair_seq, expected_seq, new_samples_since_last_prediction, paired_samples_seen
 
-    q1 = sample_queues["XIAO_MG24_Sensor_01"]
-    q2 = sample_queues["XIAO_MG24_Sensor_02"]
+    q1 = sample_queues[DEVICE_NAMES[0]]
 
-    # Infinite loop safeguard: prevent locking if queues are severely desynced
-    max_iterations = len(q1) + len(q2) + 10
-    iters = 0
-
-    while q1 and q2 and iters < max_iterations:
-        iters += 1
-        s1_head = q1[0]["global_seq"]
-        s2_head = q2[0]["global_seq"]
-
-        s1 = s2 = None
-
-        if s1_head == expected_seq and s2_head == expected_seq:
-            s1, s2 = q1.popleft(), q2.popleft()
-            expected_seq += 1
-        elif s1_head > expected_seq and s2_head == expected_seq:
-            s2 = q2.popleft()
-            expected_seq += 1
-        elif s2_head > expected_seq and s1_head == expected_seq:
-            s1 = q1.popleft()
-            expected_seq += 1
-        elif s1_head > expected_seq and s2_head > expected_seq:
-            expected_seq = min(s1_head, s2_head)
-            continue
-        else:
-            if s1_head < expected_seq: q1.popleft()
-            if s2_head < expected_seq: q2.popleft()
-            continue
-
+    while q1:
+        s1 = q1.popleft()
         pair_seq += 1
+        imu = s1["imu"]
+        paired_row = [
+            imu[0], imu[1], imu[2], imu[3], imu[4], imu[5],
+            imu[0], imu[1], imu[2], imu[3], imu[4], imu[5],
+        ]
+        paired_sample_buffer.append(paired_row)
+        paired_samples_seen += 1
+        new_samples_since_last_prediction += 1
 
-        if s1 is not None and s2 is not None:
-            paired_row = [
-                s1["imu"][0], s1["imu"][1], s1["imu"][2], s1["imu"][3], s1["imu"][4], s1["imu"][5],
-                s2["imu"][0], s2["imu"][1], s2["imu"][2], s2["imu"][3], s2["imu"][4], s2["imu"][5],
-            ]
-            paired_sample_buffer.append(paired_row)
-            paired_samples_seen += 1
-            new_samples_since_last_prediction += 1
+        if paired_samples_seen == STABILIZATION_SAMPLES:
+            print("\nStabilization completed. Real-time prediction starts now.\n")
 
-            if paired_samples_seen == STABILIZATION_SAMPLES:
-                print("\nStabilization completed. Real-time prediction starts now.\n")
-
-            run_prediction_if_ready()
+        run_prediction_if_ready()
 
 # ============================================================
 # PART 16: BLE NOTIFICATION HANDLER (LIGHTWEIGHT)
 # ============================================================
 def notification_handler(device_name):
     def handler(sender, data):
-        if len(data) != EXPECTED_NOTIFICATION_BYTES: return
-
-        first_decoded = decode_one_sample(data[0:SAMPLE_SIZE_BYTES])
-        if first_decoded is not None and handle_special_packet(device_name, first_decoded):
+        if len(data) not in {SAMPLE_SIZE_BYTES, EXPECTED_NOTIFICATION_BYTES}:
             return
 
-        for i in range(SAMPLES_PER_NOTIFICATION):
+        sample_count = len(data) // SAMPLE_SIZE_BYTES
+        appended = False
+
+        for i in range(sample_count):
             start = i * SAMPLE_SIZE_BYTES
             decoded = decode_one_sample(data[start:start + SAMPLE_SIZE_BYTES])
-            if decoded is None or decoded["header"] != EXPECTED_HEADER[device_name]:
+            if decoded is None:
+                continue
+            if handle_special_packet(device_name, decoded):
+                continue
+            if decoded["header"] != EXPECTED_HEADER[device_name]:
                 continue
             decoded["sample_seq"] = decoded["global_seq"]
             sample_queues[device_name].append(decoded)
+            appended = True
 
         # Signal the background task instead of executing heavy ML/CSV writing here.
-        if main_event_loop is not None and data_ready_event is not None:
+        if appended and main_event_loop is not None and data_ready_event is not None:
             main_event_loop.call_soon_threadsafe(data_ready_event.set)
 
     return handler
@@ -1553,15 +1523,16 @@ async def main():
             "Missing Python dependency 'bleak'. Install backend dependencies with "
             "'pip install -r requirements-flask.txt'."
         ) from BLEAK_IMPORT_ERROR
+
+    configure_tcn_model()
     
     main_event_loop = asyncio.get_running_loop()
     data_ready_event = asyncio.Event()
     disconnect_event = asyncio.Event()
     reset_device_connection_state()
 
-    load_ml_objects()
     CALIBRATION_PHASE = "connecting"
-    CALIBRATION_MESSAGE = "Searching for both wearable sensors."
+    CALIBRATION_MESSAGE = "Searching for the wearable sensor."
     CALIBRATION_DEADLINE = None
     print("Scanning for devices...")
     devices = await BleakScanner.discover(timeout=10.0)
@@ -1573,13 +1544,12 @@ async def main():
         else "[BLE] Found target sensors: none"
     )
 
-    if len(targets) < 2:
+    if len(targets) < len(DEVICE_NAMES):
         missing = [name for name in DEVICE_NAMES if name not in targets]
-        raise RuntimeError(f"Could not find both sensors. Missing: {missing}")
+        raise RuntimeError(f"Could not find the wearable sensor. Missing: {missing}")
 
     c1 = BleakClient(targets[DEVICE_NAMES[0]], timeout=20, disconnected_callback=make_disconnect_callback(DEVICE_NAMES[0]), services=[SERVICE_UUID])
-    c2 = BleakClient(targets[DEVICE_NAMES[1]], timeout=20, disconnected_callback=make_disconnect_callback(DEVICE_NAMES[1]), services=[SERVICE_UUID])
-    clients = [c1, c2]
+    clients = [c1]
     client_map = get_client_map(clients)
 
     bg_task = asyncio.create_task(background_processing_task())
@@ -1587,13 +1557,9 @@ async def main():
     try:
         await connect_client_with_retry(c1, DEVICE_NAMES[0])
         await asyncio.sleep(POST_CONNECT_STABILIZE_SEC)
-        await connect_client_with_retry(c2, DEVICE_NAMES[1])
-        await asyncio.sleep(POST_CONNECT_STABILIZE_SEC)
 
         # Subscribe to IMU stream notifications.
         await c1.start_notify(DATA_CHAR_UUID, notification_handler(DEVICE_NAMES[0]))
-        await asyncio.sleep(0.3)
-        await c2.start_notify(DATA_CHAR_UUID, notification_handler(DEVICE_NAMES[1]))
         await asyncio.sleep(0.3)
 
         # Subscribe to battery voltage notifications when firmware exposes FFF3.
@@ -1624,7 +1590,7 @@ async def main():
             except Exception as e:
                 print(f"[BATTERY] Initial read failed for {name}: {e}")
 
-        # Run an automatic calibration sequence (static neutral capture + functional check)
+        # Run an automatic calibration sequence (static neutral capture/check).
         try:
             calibration_ok = await automatic_calibration_sequence(client_map)
             if calibration_ok is False:

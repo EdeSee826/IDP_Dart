@@ -1,6 +1,6 @@
 """
 Flask Backend for IDP Risk Event Detection
-Pure Python backend handling BLE, ML prediction, and event storage.
+Pure Python backend handling BLE streaming, calibration, and event storage.
 Flutter is UI-only and communicates via REST API.
 """
 
@@ -11,8 +11,6 @@ import threading
 import signal
 import importlib.util
 import secrets
-import tempfile
-from pathlib import Path
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -23,40 +21,18 @@ CORS(app)
 
 # Database configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
 DB_PATH = os.path.join(BASE_DIR, "risky_events.db")
 RETENTION_DAYS = 7
 
 # Background thread management
 ml_thread = None
 ml_thread_stop_event = threading.Event()
-picc2_module = None
 imu_module = None
 caregiver_sessions = {}
 
 
-def get_imu_interpretation_code_with_functional_validation():
+def get_imu_interpretation_code():
     return get_imu_backend()
-
-
-def get_picc2_backend():
-    global picc2_module
-    if picc2_module is not None:
-        return picc2_module
-
-    module_path = os.path.join(REPO_ROOT, "picc2.py")
-
-    if not os.path.exists(module_path):
-        raise FileNotFoundError("picc2.py was not found in the repository root")
-
-    spec = importlib.util.spec_from_file_location("picc2_backend", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError("Unable to load picc2 backend module")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    picc2_module = module
-    return picc2_module
 
 
 def get_imu_backend():
@@ -66,7 +42,7 @@ def get_imu_backend():
 
     module_path = os.path.join(
         os.path.dirname(__file__),
-        "imu_interpretation_code_with_functional_validation.py",
+        "imu_interpretation_code.py",
     )
     spec = importlib.util.spec_from_file_location("imu_interpretation", module_path)
     if spec is None or spec.loader is None:
@@ -85,13 +61,6 @@ def get_battery_status():
     except Exception:
         return {
             "sensor1": {
-                "raw_adc": None,
-                "voltage": None,
-                "battery_percent": None,
-                "last_updated": None,
-                "connected": False,
-            },
-            "sensor2": {
                 "raw_adc": None,
                 "voltage": None,
                 "battery_percent": None,
@@ -132,7 +101,7 @@ def get_static_placement_status():
 
 def set_backend_session_active(active):
     """Sync Flask and ML backend session state."""
-    imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+    imu_interpretation = get_imu_interpretation_code()
     imu_interpretation.SESSION_ACTIVE = active
 
     if not active:
@@ -668,7 +637,7 @@ def get_family_dashboard():
 def status():
     """Return backend streaming and device connection status"""
     try:
-        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        imu_interpretation = get_imu_interpretation_code()
         runtime_status = imu_interpretation.get_runtime_status()
         battery_status = get_battery_status()
         static_status = get_static_placement_status()
@@ -697,7 +666,6 @@ def status():
                 "session_active": False,
                 "connected_count": 0,
                 "devices": [
-                    {"name": "XIAO_MG24_Sensor_01", "connected": False},
                     {"name": "XIAO_MG24_Sensor_02", "connected": False},
                 ],
                 "battery": get_battery_status(),
@@ -714,50 +682,35 @@ def status():
 
 @app.route("/api/start", methods=["POST"])
 def start_stream():
-    """Start BLE streaming and ML prediction in background"""
+    """Start BLE streaming in background."""
     global ml_thread
-    imu_interpretation_code_with_functional_validation = get_imu_interpretation_code_with_functional_validation()
+    imu_interpretation_code = get_imu_interpretation_code()
     
-    if imu_interpretation_code_with_functional_validation.SESSION_ACTIVE:
+    if imu_interpretation_code.SESSION_ACTIVE:
         return jsonify({"error": "Session already active"}), 400
 
-    bleak_error = getattr(imu_interpretation_code_with_functional_validation, "BLEAK_IMPORT_ERROR", None)
+    bleak_error = getattr(imu_interpretation_code, "BLEAK_IMPORT_ERROR", None)
     if bleak_error is not None:
         return jsonify({
             "error": "Missing Python dependency 'bleak'",
             "details": "Install backend dependencies with: pip install -r requirements-flask.txt"
         }), 500
 
-    # Check for required ML model files
-    try:
-        required_files = ["scaler (1).pkl", "svm_rfe_model (1).pkl"]
-        missing_files = [
-            filename for filename in required_files 
-            if imu_interpretation_code_with_functional_validation.resolve_model_file(filename) is None
-        ]
-        if missing_files:
-            return jsonify({
-                "error": "Missing IMU interpretation model files",
-                "missing_files": missing_files
-            }), 400
-    except Exception as e:
-        return jsonify({"error": f"Model check failed: {str(e)}"}), 500
-    
     # Mark session as active and start background thread
     body = request.get_json(silent=True) or {}
-    imu_interpretation_code_with_functional_validation.LAST_ERROR = None
-    imu_interpretation_code_with_functional_validation.CALIBRATION_PHASE = "connecting"
-    imu_interpretation_code_with_functional_validation.CALIBRATION_MESSAGE = "Searching for both wearable sensors."
-    imu_interpretation_code_with_functional_validation.CALIBRATION_DEADLINE = None
-    imu_interpretation_code_with_functional_validation.CALIBRATION_RETRY_REQUESTED = False
+    imu_interpretation_code.LAST_ERROR = None
+    imu_interpretation_code.CALIBRATION_PHASE = "connecting"
+    imu_interpretation_code.CALIBRATION_MESSAGE = "Searching for the wearable sensor."
+    imu_interpretation_code.CALIBRATION_DEADLINE = None
+    imu_interpretation_code.CALIBRATION_RETRY_REQUESTED = False
     account_id = str(body.get("account_id") or "default").strip().lower()
-    imu_interpretation_code_with_functional_validation.CALIBRATION_ACCOUNT_ID = account_id
-    imu_interpretation_code_with_functional_validation.CALIBRATION_ENROLL_BASELINE = bool(body.get("enroll_baseline", False))
+    imu_interpretation_code.CALIBRATION_ACCOUNT_ID = account_id
+    imu_interpretation_code.CALIBRATION_ENROLL_BASELINE = bool(body.get("enroll_baseline", False))
     set_backend_session_active(True)
     
     try:
         ml_thread_stop_event.clear()
-        ml_thread = threading.Thread(target=run_imu_interpretation_code_with_functional_validation, daemon=True)
+        ml_thread = threading.Thread(target=run_imu_interpretation_code, daemon=True)
         ml_thread.start()
         
         return jsonify({
@@ -772,7 +725,7 @@ def start_stream():
 @app.route("/api/stop", methods=["POST"])
 def stop_stream():
     """Stop BLE streaming and IMU interpretation"""
-    imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+    imu_interpretation = get_imu_interpretation_code()
     
     if not imu_interpretation.SESSION_ACTIVE:
         return jsonify({"error": "No active session"}), 400
@@ -797,7 +750,7 @@ def stop_stream():
 def retry_calibration():
     """Continue calibration after the patient acknowledges guidance."""
     try:
-        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        imu_interpretation = get_imu_interpretation_code()
         if not imu_interpretation.SESSION_ACTIVE:
             return jsonify({"error": "No active sensor session"}), 400
         if not imu_interpretation.request_calibration_retry():
@@ -814,7 +767,7 @@ def retry_calibration():
 def bypass_calibration():
     """Bypass calibration for an explicitly requested validation-only session."""
     try:
-        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        imu_interpretation = get_imu_interpretation_code()
         if not imu_interpretation.SESSION_ACTIVE:
             return jsonify({"error": "No active sensor session"}), 400
         if not imu_interpretation.request_calibration_bypass():
@@ -928,61 +881,18 @@ def sync_appointment_to_teams():
         return jsonify({"error": f"Failed to sync appointment: {str(e)}"}), 500
 
 
-@app.route("/api/picc/analyze", methods=["POST"])
-def analyze_picc_image():
-    """Analyze an uploaded PICC image and return the measured line length."""
-    uploaded_image = request.files.get("image")
-    if uploaded_image is None or uploaded_image.filename == "":
-        return jsonify({"error": "image file is required"}), 400
-
-    suffix = Path(uploaded_image.filename).suffix or ".jpg"
-    temp_path = None
-
-    try:
-        model_path = os.path.join(REPO_ROOT, "best.pt")
-        if not os.path.exists(model_path):
-            return jsonify({
-                "status": "error",
-                "error": "Missing PICC YOLO model file: best.pt"
-            }), 500
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            temp_path = temp_file.name
-            uploaded_image.save(temp_path)
-
-        picc2 = get_picc2_backend()
-        result = picc2.analyze_image(temp_path)
-
-        return jsonify(
-            {
-                "status": "ok",
-                "measurement_cm": result["external_length_cm"],
-                "picc_pixels": result["picc_pixels"],
-                "mark_distance_pixels": result["mark_distance_pixels"],
-                "timestamp": datetime.now().isoformat(),
-            }
-        ), 200
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
-
 
 # ============================================================
 # BACKGROUND ML/BLE RUNNER
 # ============================================================
 
-def run_imu_interpretation_code_with_functional_validation():
+def run_imu_interpretation_code():
     """
-    Run the IMU interpretation code with functional validation in a separate thread.
-    Manages BLE connections, sensor streaming, and IMU predictions.
+    Run the IMU interpretation code in a separate thread.
+    Manages BLE connections, calibration, and sensor streaming.
     """
     try:
-        imu_interpretation = get_imu_interpretation_code_with_functional_validation()
+        imu_interpretation = get_imu_interpretation_code()
         app.logger.info("[Flask] Starting IMU interpretation thread...")
         # Run the async IMU interpretation loop
         asyncio.run(imu_interpretation.main())
@@ -1019,15 +929,6 @@ if __name__ == "__main__":
         # Initialize database
         init_database()
         app.logger.info("[Flask] Database initialized")
-        
-        # Load ML models once on startup
-        try:
-            imu_interpretation = get_imu_interpretation_code_with_functional_validation()
-            imu_interpretation.load_ml_objects()
-            app.logger.info("[Flask] IMU interpretation models loaded successfully")
-        except Exception as e:
-            app.logger.warning(f"[Flask] Could not preload IMU interpretation models: {e}")
-            app.logger.info("[Flask] Models will be loaded when streaming starts")
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, handle_shutdown)

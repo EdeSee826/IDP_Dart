@@ -17,7 +17,6 @@ class SensorConnectionPanel extends ConsumerStatefulWidget {
     this.continueLabel = 'Continue',
     this.onContinue,
     this.onSensorTap1,
-    this.onSensorTap2,
     this.showImage = true,
   });
 
@@ -25,7 +24,6 @@ class SensorConnectionPanel extends ConsumerStatefulWidget {
   final String continueLabel;
   final VoidCallback? onContinue;
   final VoidCallback? onSensorTap1;
-  final VoidCallback? onSensorTap2;
   final bool showImage;
 
   @override
@@ -38,14 +36,14 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
   bool _retryingCalibration = false;
   String? _errorMessage;
 
-  Future<bool> _waitForBothSensors() async {
+  Future<bool> _waitForSensor() async {
     final deadline = DateTime.now().add(const Duration(seconds: 35));
 
     while (mounted && DateTime.now().isBefore(deadline)) {
       await ref.read(backendStatusProvider.notifier).refreshStatus();
       final status = ref.read(backendStatusProvider);
 
-      if (status.device1Connected && status.device2Connected) {
+      if (status.device1Connected) {
         return true;
       }
       if (status.errorMessage != null) {
@@ -57,7 +55,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
 
     _errorMessage = ref
         .read(appStringsProvider)
-        .text('Both sensors were not found. Check that they are powered on.');
+        .text('The wearable sensor was not found. Check that it is powered on.');
     return false;
   }
 
@@ -96,41 +94,24 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
             final strings = ref.watch(appStringsProvider);
             final phase = status.calibrationPhase;
             final isReadyToStand = phase == 'ready_to_stand';
-            final isReadyForFunctional = phase == 'ready_for_functional';
-            final isFunctional = phase == 'functional' ||
-                phase == 'functional_failed' ||
-                isReadyForFunctional;
-            final hasFailedCalibration =
-                phase == 'static_failed' || phase == 'functional_failed';
-            final color = isFunctional
-                ? (hasFailedCalibration
-                    ? const Color(0xFFB42318)
-                    : const Color(0xFF6D35D4))
-                : (hasFailedCalibration
-                    ? const Color(0xFFD97706)
-                    : const Color(0xFF0F7B6C));
+            final hasFailedCalibration = phase == 'static_failed';
+            final color = hasFailedCalibration
+                ? const Color(0xFFD97706)
+                : const Color(0xFF0F7B6C);
             final remaining = status.calibrationRemainingSeconds;
-            final totalSeconds = isFunctional ? 12 : 5;
-            final calibrationMessage = phase == 'functional_failed'
+            const totalSeconds = 5;
+            final calibrationMessage = phase == 'static_failed'
                 ? strings.text(
-                    'Functional calibration failed. Sensor 1 and Sensor 2 may be swapped. Check that Sensor 1 is on the upper arm and Sensor 2 is on the wrist.',
+                    'Static calibration differs from your initial baseline. Check that the sensor marker points down toward the earth.',
                   )
-                : phase == 'static_failed'
+                : isReadyToStand
                     ? strings.text(
-                        'Static calibration differs from your initial baseline. Check that each sensor marker points down toward the earth.',
+                        'The wearable sensor is connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.',
                       )
-                    : isReadyToStand
-                        ? strings.text(
-                            'Both sensors are connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.',
-                          )
-                        : isReadyForFunctional
-                            ? strings.text(
-                                'Get ready to gently pat the front of your thigh with your PICC arm. Tap I understand when you are ready to begin functional calibration.',
-                              )
-                            : status.calibrationMessage ??
-                                strings.text(
-                                  'Preparing calibration after both sensors connect.',
-                                );
+                    : status.calibrationMessage ??
+                        strings.text(
+                          'Preparing calibration after the sensor connects.',
+                        );
 
             return AlertDialog(
               shape: RoundedRectangleBorder(
@@ -142,27 +123,17 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isFunctional
-                          ? Icons.touch_app_rounded
-                          : Icons.accessibility_new_rounded,
+                      Icons.accessibility_new_rounded,
                       color: color,
                       size: 38,
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      phase == 'functional_failed'
-                          ? strings.text('Check whether sensors are swapped')
-                          : phase == 'static_failed'
-                              ? strings.text('Check sensor orientation')
-                              : isReadyToStand
-                                  ? strings.text('Stand before calibration')
-                                  : isReadyForFunctional
-                                      ? strings
-                                          .text('Prepare to pat your thigh')
-                                      : isFunctional
-                                          ? strings
-                                              .text('Functional calibration')
-                                          : strings.text('Static calibration'),
+                      phase == 'static_failed'
+                          ? strings.text('Check sensor orientation')
+                          : isReadyToStand
+                              ? strings.text('Stand before calibration')
+                              : strings.text('Static calibration'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 18,
@@ -182,16 +153,10 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
                     ),
                     const SizedBox(height: 16),
                     _calibrationGuideImage(
-                      assetPath: isFunctional
-                          ? 'images/functional_calibration.png'
-                          : 'images/standing.png',
-                      fallback: isFunctional
-                          ? _functionalCalibrationFallback
-                          : _staticCalibrationFallback,
+                      assetPath: 'images/standing.png',
+                      fallback: _staticCalibrationFallback,
                     ),
-                    if (hasFailedCalibration ||
-                        isReadyToStand ||
-                        isReadyForFunctional) ...[
+                    if (hasFailedCalibration || isReadyToStand) ...[
                       const SizedBox(height: 22),
                       SizedBox(
                         width: double.infinity,
@@ -273,16 +238,15 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
         await _showCalibrationResultWarnings(status);
       }
       if (!mounted) return;
-      final hasFailedCheck = !enrollBaseline &&
-          (status.staticCalibrationPassed == false ||
-              status.functionalCalibrationPassed == false);
+      final hasFailedCheck =
+          !enrollBaseline && status.staticCalibrationPassed == false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
           content: Text(
             hasFailedCheck
                 ? ref.read(appStringsProvider).text(
-                      'Calibration checks finished. Please correct the sensor placement.',
+                      'Static calibration failed. Check that the sensor marker points down toward the earth.',
                     )
                 : ref
                     .read(appStringsProvider)
@@ -307,9 +271,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
         await ref.read(backendStatusProvider.notifier).refreshStatus();
         final phase = ref.read(backendStatusProvider).calibrationPhase;
         if (phase != 'ready_to_stand' &&
-            phase != 'ready_for_functional' &&
-            phase != 'static_failed' &&
-            phase != 'functional_failed') {
+            phase != 'static_failed') {
           break;
         }
       }
@@ -333,20 +295,9 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
       await _showPlacementWarning(
         title: 'Check sensor orientation',
         message:
-            'The static neutral reading differs from the initial reading saved when this account was created. Check both sensors and make sure each orientation marker points down toward the earth.',
+            'The static neutral reading differs from the initial reading saved when this account was created. Check that the sensor marker points down toward the earth.',
         icon: Icons.explore_rounded,
         color: const Color(0xFFD97706),
-      );
-    }
-
-    if (!mounted) return;
-    if (status.functionalCalibrationPassed == false) {
-      await _showPlacementWarning(
-        title: 'Check whether sensors are swapped',
-        message:
-            'Functional calibration failed. Sensor 1 and Sensor 2 may be swapped. Check that Sensor 1 is on the upper arm and Sensor 2 is on the wrist.',
-        icon: Icons.accessibility_new_rounded,
-        color: const Color(0xFFB42318),
       );
     }
   }
@@ -410,38 +361,6 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
           ],
         );
       },
-    );
-  }
-
-  Widget _functionalCalibrationFallback() {
-    final strings = ref.watch(appStringsProvider);
-
-    return Container(
-      width: 360,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F4FF),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD8C8FF)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            strings.text('Forward tap on thigh'),
-            style: const TextStyle(
-              color: Color(0xFF312E81),
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(strings.text('1. Keep your PICC arm straight.')),
-          Text(strings.text('2. Tap slightly forward, about 10 degrees.')),
-          Text(strings.text('3. Repeat 3 times.')),
-        ],
-      ),
     );
   }
 
@@ -514,10 +433,10 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
         _errorMessage = result.message ??
             ref
                 .read(appStringsProvider)
-                .text('Unable to connect sensors right now.');
+                .text('Unable to connect the sensor right now.');
       } else if (mounted) {
-        final bothConnected = await _waitForBothSensors();
-        if (bothConnected && mounted) {
+        final sensorConnected = await _waitForSensor();
+        if (sensorConnected && mounted) {
           await _showCalibrationGuide(enrollBaseline: enrollBaseline);
         }
         await ref.read(backendStatusProvider.notifier).refreshStatus();
@@ -525,7 +444,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
     } catch (e) {
       _errorMessage = ref
           .read(appStringsProvider)
-          .text('Unable to connect sensors right now.');
+          .text('Unable to connect the sensor right now.');
       await ref.read(backendStatusProvider.notifier).refreshStatus();
     } finally {
       if (mounted) {
@@ -588,9 +507,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
             height: 520,
             boxFit: BoxFit.contain,
             device1Connected: backendStatus.device1Connected,
-            device2Connected: backendStatus.device2Connected,
             onMarker1: widget.onSensorTap1,
-            onMarker2: widget.onSensorTap2,
           ),
         ),
       ),
@@ -602,27 +519,20 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
     final backendStatus = ref.watch(backendStatusProvider);
     final session = ref.watch(sessionControllerProvider);
     final strings = ref.watch(appStringsProvider);
-    final connectedCount = [
-      backendStatus.device1Connected,
-      backendStatus.device2Connected,
-    ].where((connected) => connected).length;
-    final allConnected =
-        backendStatus.device1Connected && backendStatus.device2Connected;
+    final connectedCount = backendStatus.device1Connected ? 1 : 0;
+    final allConnected = backendStatus.device1Connected;
     final monitoringActive = backendStatus.streamingActive && allConnected;
     final connecting = backendStatus.calibrationPhase == 'connecting';
     final calibrating = backendStatus.calibrationPhase == 'static' ||
-        backendStatus.calibrationPhase == 'functional' ||
         backendStatus.calibrationPhase == 'ready_to_stand' ||
-        backendStatus.calibrationPhase == 'ready_for_functional' ||
-        backendStatus.calibrationPhase == 'static_failed' ||
-        backendStatus.calibrationPhase == 'functional_failed';
+        backendStatus.calibrationPhase == 'static_failed';
     final calibrationComplete = backendStatus.calibrationPhase == 'complete' &&
         session.sensorBaselineCompleted;
     final actionLabel = backendStatus.streamingActive
         ? strings.text('Disconnect')
         : (connectedCount > 0
-            ? strings.text('Reconnect Sensors')
-            : strings.text('Connect Sensors'));
+            ? strings.text('Reconnect Sensor')
+            : strings.text('Connect Sensor'));
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -642,7 +552,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            strings.text('Wearable Sensors'),
+            strings.text('Wearable Sensor'),
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -653,9 +563,9 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
           const SizedBox(height: 6),
           Text(
             connecting
-                ? strings.text('Connecting sensors...')
+                ? strings.text('Connecting sensor...')
                 : calibrating
-                    ? strings.text('Calibrating sensors...')
+                    ? strings.text('Calibrating sensor...')
                     : monitoringActive
                         ? strings.text('Monitoring active')
                         : strings.text('Monitoring paused'),
@@ -668,17 +578,12 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
           ),
           const SizedBox(height: 12),
           DeviceStatusTile(
-            title: strings.text('Sensor 1: Upper Arm Sensor'),
-            connected: backendStatus.device1Connected,
-          ),
-          const SizedBox(height: 8),
-          DeviceStatusTile(
             title: strings.text('Sensor 2: Wrist Sensor'),
-            connected: backendStatus.device2Connected,
+            connected: backendStatus.device1Connected,
           ),
           const SizedBox(height: 10),
           Text(
-            '${strings.text('Connected sensors')}: $connectedCount / 2',
+            '${strings.text('Connected sensor')}: $connectedCount / 1',
             style: const TextStyle(
               color: Color(0xFF667085),
               fontSize: 12.5,
@@ -702,14 +607,10 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
                 Expanded(
                   child: Text(
                     calibrationComplete
-                        ? strings.text(
-                            'Static and functional calibration complete',
-                          )
+                        ? strings.text('Static calibration complete')
                         : calibrating
                             ? strings.text('Calibration in progress')
-                            : strings.text(
-                                'Static and functional calibration required',
-                              ),
+                            : strings.text('Static calibration required'),
                     style: TextStyle(
                       color: calibrationComplete
                           ? const Color(0xFF13795B)
@@ -735,7 +636,7 @@ class _SensorConnectionPanelState extends ConsumerState<SensorConnectionPanel> {
                         : Icons.link_rounded,
                   ),
                   label: Text(
-                    _busy ? strings.text('Checking sensors...') : actionLabel,
+                    _busy ? strings.text('Checking sensor...') : actionLabel,
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,

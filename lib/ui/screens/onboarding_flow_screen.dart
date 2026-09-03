@@ -210,7 +210,7 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
     return _pageCard(
       title: 'Sensor Placement',
       subtitle:
-          'Place both wearable sensors comfortably for reliable daily monitoring.',
+          'Place the wearable sensor comfortably for reliable daily monitoring.',
       content: Column(
         children: [
           // MAIN IMAGE SECTION
@@ -246,7 +246,7 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                       padding: const EdgeInsets.only(bottom: 8.0),
                       child: GestureDetector(
                         onTap: () => _showSensorSheet(
-                          title: 'Sensor 1: Upper Arm Sensor',
+                          title: 'Sensor 2: Wrist Sensor',
                           connected:
                               ref.read(backendStatusProvider).device1Connected,
                           batteryLevel: ref
@@ -272,48 +272,6 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                             ],
                           ),
                           child: const Center(
-                            child: Text('1',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  Align(
-                    alignment: const FractionalOffset(0.18, 0.80),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8.0),
-                      child: GestureDetector(
-                        onTap: () => _showSensorSheet(
-                          title: 'Sensor 2: Wrist Sensor',
-                          connected:
-                              ref.read(backendStatusProvider).device2Connected,
-                          batteryLevel: ref
-                              .read(backendStatusProvider)
-                              .device2BatteryPercent,
-                        ),
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color:
-                                ref.read(backendStatusProvider).device2Connected
-                                    ? const Color(0xFF20B26C)
-                                    : const Color(0xFFE5484D),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x22000000),
-                                blurRadius: 6,
-                                offset: Offset(0, 3),
-                              ),
-                            ],
-                          ),
-                          child: const Center(
                             child: Text('2',
                                 style: TextStyle(
                                     color: Colors.white,
@@ -323,6 +281,7 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                       ),
                     ),
                   ),
+
                 ],
               ),
             ),
@@ -337,16 +296,9 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                     children: [
                       _instructionCard(
                         asset: 'images/image_3.png',
-                        title: 'Sensor 1: Upper Arm Sensor',
-                        description:
-                            'Placed above the elbow region on the upper arm.',
-                      ),
-                      const SizedBox(height: 10),
-                      _instructionCard(
-                        asset: 'images/image_4.png',
                         title: 'Sensor 2: Wrist Sensor',
                         description:
-                            'Placed comfortably near the wrist/forearm region.',
+                            'Placed securely near the wrist with the marker facing down.',
                       ),
                     ],
                   )
@@ -355,18 +307,9 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                       Expanded(
                         child: _instructionCard(
                           asset: 'images/image_3.png',
-                          title: 'Sensor 1: Upper Arm Sensor',
-                          description:
-                              'Placed above the elbow region on the upper arm.',
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _instructionCard(
-                          asset: 'images/image_4.png',
                           title: 'Sensor 2: Wrist Sensor',
                           description:
-                              'Placed comfortably near the wrist/forearm region.',
+                              'Placed securely near the wrist with the marker facing down.',
                         ),
                       ),
                     ],
@@ -397,8 +340,8 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
                 SizedBox(height: 8),
                 Text('• Keep straps snug but comfortable'),
                 Text(
-                    '• Avoid placing sensors directly on elbow or wrist joints'),
-                Text('• Make sure sensors do not shift during movement'),
+                    '• Avoid placing the sensor directly on the elbow joint'),
+                Text('• Make sure the sensor does not shift during movement'),
               ],
             ),
           ),
@@ -473,9 +416,9 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
 
   Widget _connectSensorsPage() {
     return _pageCard(
-      title: 'Connect Sensors',
+      title: 'Connect Sensor',
       subtitle:
-          'Connect both wearable sensors to record your first static and functional baseline before monitoring.',
+          'Connect the wearable sensor to record your first static baseline before monitoring.',
       content: SensorConnectionPanel(
         showContinueButton: true,
         showImage: false,
@@ -496,10 +439,7 @@ class _OnboardingFlowScreenState extends ConsumerState<OnboardingFlowScreen> {
       showDragHandle: true,
       builder: (context) {
         final backendStatus = ref.watch(backendStatusProvider);
-        final bool isDevice1 = title.contains('Sensor 1');
-        final bool? staticPassed = isDevice1
-            ? backendStatus.device1StaticPassed
-            : backendStatus.device2StaticPassed;
+        final bool? staticPassed = backendStatus.device1StaticPassed;
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

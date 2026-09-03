@@ -170,14 +170,12 @@ class PatientController extends StateNotifier<PatientState> {
 
   /// Patient care checklist management
 
-  /// Temporarily mark both sensors as connected (used by onboarding mock flow).
+  /// Temporarily mark the wearable sensor as connected (used by onboarding mock flow).
   /// This does not touch any BLE layer and is safe when backend manages device state.
   void setMockSensorsConnected() {
     state = state.copyWith(
       device1Connected: true,
-      device2Connected: true,
       device1BatteryLevel: () => state.device1BatteryLevel ?? 80,
-      device2BatteryLevel: () => state.device2BatteryLevel ?? 80,
     );
   }
 

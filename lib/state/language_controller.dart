@@ -59,12 +59,12 @@ class AppStrings {
       'Malay': 'Bahasa Melayu',
       'Chinese': 'Bahasa Cina',
       'Calibration': 'Kalibrasi',
-      'Replace your original static neutral and functional calibration readings.':
-          'Gantikan bacaan kalibrasi neutral statik dan fungsian asal anda.',
+      'Replace your original static neutral calibration reading.':
+          'Gantikan bacaan kalibrasi neutral statik asal anda.',
+      'Your next sensor connection will perform static neutral calibration and save the result as the new baseline.':
+          'Sambungan sensor seterusnya akan menjalankan kalibrasi neutral statik dan menyimpan keputusan sebagai asas baharu.',
       'Perform new baseline calibration': 'Buat kalibrasi asas baharu',
       'Overwrite baseline calibration?': 'Ganti kalibrasi asas?',
-      'Your next sensor connection will perform static neutral and functional calibration and save the results as the new baseline.':
-          'Sambungan sensor seterusnya akan menjalankan kalibrasi neutral statik dan fungsian serta menyimpan keputusan sebagai asas baharu.',
       'Cancel': 'Batal',
       'Overwrite baseline': 'Ganti asas',
       'Ready. Connect the sensors to record the new baseline calibration.':
@@ -104,8 +104,11 @@ class AppStrings {
       'Copy support email': 'Salin e-mel sokongan',
       'Developer support email copied.': 'E-mel sokongan pembangun disalin.',
       'Wearable Sensors': 'Sensor Boleh Pakai',
+      'Wearable Sensor': 'Sensor Boleh Pakai',
       'Connecting sensors...': 'Menyambungkan sensor...',
+      'Connecting sensor...': 'Menyambungkan sensor...',
       'Calibrating sensors...': 'Mengkalibrasi sensor...',
+      'Calibrating sensor...': 'Mengkalibrasi sensor...',
       'Monitoring active': 'Pemantauan aktif',
       'Monitoring paused': 'Pemantauan dijeda',
       'Sensor 1: Upper Arm Sensor': 'Sensor 1: Sensor Lengan Atas',
@@ -113,59 +116,56 @@ class AppStrings {
       'Connected': 'Bersambung',
       'Disconnected': 'Terputus',
       'Connected sensors': 'Sensor bersambung',
+      'Connected sensor': 'Sensor bersambung',
       'Disconnect': 'Putuskan sambungan',
       'Reconnect Sensors': 'Sambung semula sensor',
+      'Reconnect Sensor': 'Sambung semula sensor',
       'Connect Sensors': 'Sambungkan sensor',
+      'Connect Sensor': 'Sambungkan sensor',
       'Checking sensors...': 'Memeriksa sensor...',
-      'Static and functional calibration complete':
-          'Kalibrasi statik dan fungsian selesai',
+      'Checking sensor...': 'Memeriksa sensor...',
+      'Static calibration complete': 'Kalibrasi statik selesai',
       'Calibration in progress': 'Kalibrasi sedang berjalan',
-      'Static and functional calibration required':
-          'Kalibrasi statik dan fungsian diperlukan',
-      'Check sensor positions': 'Periksa kedudukan sensor',
-      'Check whether sensors are swapped': 'Periksa sama ada sensor tertukar',
-      'Functional calibration failed. Sensor 1 and Sensor 2 may be swapped. Check that Sensor 1 is on the upper arm and Sensor 2 is on the wrist.':
-          'Kalibrasi fungsian gagal. Sensor 1 dan Sensor 2 mungkin tertukar. Pastikan Sensor 1 berada pada lengan atas dan Sensor 2 berada pada pergelangan tangan.',
+      'Static calibration required': 'Kalibrasi statik diperlukan',
       'Check sensor orientation': 'Periksa orientasi sensor',
-      'Functional calibration': 'Kalibrasi fungsian',
       'Static calibration': 'Kalibrasi statik',
       'Preparing calibration after both sensors connect.':
           'Menyediakan kalibrasi selepas kedua-dua sensor bersambung.',
-      'Calibration checks finished. Please correct the sensor placement.':
-          'Semakan kalibrasi selesai. Sila betulkan kedudukan sensor.',
+      'Preparing calibration after the sensor connects.':
+          'Menyediakan kalibrasi selepas sensor bersambung.',
       'Calibration complete. Monitoring is starting.':
           'Kalibrasi selesai. Pemantauan bermula.',
       'The static neutral reading differs from the initial reading saved when this account was created. Check both sensors and make sure each orientation marker points down toward the earth.':
           'Bacaan neutral statik berbeza daripada bacaan awal semasa akaun ini dibuat. Periksa kedua-dua sensor dan pastikan penanda orientasi menghala ke bawah.',
-      'The functional calibration reading differs from the initial reading saved when this account was created. Make sure Sensor 1 is worn on the upper arm and Sensor 2 is worn on the wrist.':
-          'Bacaan kalibrasi fungsian berbeza daripada bacaan awal semasa akaun ini dibuat. Pastikan Sensor 1 dipakai pada lengan atas dan Sensor 2 pada pergelangan tangan.',
+      'The static neutral reading differs from the initial reading saved when this account was created. Check that the sensor marker points down toward the earth.':
+          'Bacaan neutral statik berbeza daripada bacaan awal semasa akaun ini dibuat. Pastikan penanda sensor menghala ke bawah ke arah bumi.',
+      'Static calibration differs from your initial baseline. Check that the sensor marker points down toward the earth.':
+          'Kalibrasi statik berbeza daripada garis dasar awal anda. Pastikan penanda sensor menghala ke bawah ke arah bumi.',
+      'Static calibration failed. Check that the sensor marker points down toward the earth.':
+          'Kalibrasi statik gagal. Pastikan penanda sensor menghala ke bawah ke arah bumi.',
       'I understand': 'Saya faham',
       'Both sensors were not found. Check that they are powered on.':
           'Kedua-dua sensor tidak ditemui. Pastikan sensor dihidupkan.',
+      'The wearable sensor was not found. Check that it is powered on.':
+          'Sensor boleh pakai tidak ditemui. Pastikan sensor dihidupkan.',
       'Unable to connect sensors right now.':
+          'Tidak dapat menyambungkan sensor sekarang.',
+      'Unable to connect the sensor right now.':
           'Tidak dapat menyambungkan sensor sekarang.',
       'Unable to pause monitoring right now.':
           'Tidak dapat menjeda pemantauan sekarang.',
-      'Forward tap on thigh': 'Ketuk ke hadapan pada paha',
-      '1. Keep your PICC arm straight.': '1. Pastikan lengan PICC lurus.',
-      '2. Tap slightly forward, about 10 degrees.':
-          '2. Ketuk sedikit ke hadapan, kira-kira 10 darjah.',
-      '3. Repeat 3 times.': '3. Ulang 3 kali.',
       'Stand still for calibration': 'Berdiri diam untuk kalibrasi',
       'Stand before calibration': 'Berdiri sebelum kalibrasi',
-      'Prepare to pat your thigh': 'Bersedia untuk menepuk paha',
-      'Get ready to gently pat the front of your thigh with your PICC arm. Tap I understand when you are ready to begin functional calibration.':
-          'Bersedia untuk menepuk bahagian hadapan paha secara perlahan dengan lengan PICC. Tekan Saya faham apabila anda bersedia untuk memulakan kalibrasi fungsian.',
       'Both sensors are connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.':
           'Kedua-dua sensor telah disambungkan. Berdiri dengan selesa dan relakskan lengan PICC di sisi badan, kemudian tekan Saya faham untuk memulakan kalibrasi.',
+      'The wearable sensor is connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.':
+          'Sensor boleh pakai telah disambungkan. Berdiri dengan selesa dan relakskan lengan PICC di sisi badan, kemudian tekan Saya faham untuk memulakan kalibrasi.',
       '1. Stand comfortably with the PICC arm relaxed.':
           '1. Berdiri dengan selesa dan relakskan lengan PICC.',
       '2. Keep the arm still beside the body.':
           '2. Pastikan lengan diam di sisi badan.',
       '3. Make sure the sensor marker points down.':
           '3. Pastikan penanda sensor menghala ke bawah.',
-      'Upload PICC Photo': 'Muat Naik Foto PICC',
-      'Failed to upload photo': 'Gagal memuat naik foto',
       'Error loading events': 'Ralat memuatkan peristiwa',
       'Retry': 'Cuba lagi',
       'No risky events detected yet.': 'Tiada peristiwa berisiko dikesan lagi.',
@@ -193,23 +193,15 @@ class AppStrings {
       'Friendly tip: keep your PICC arm movements smooth and relaxed.':
           'Tip mesra: pastikan pergerakan lengan PICC lancar dan relaks.',
       'Today\'s Length': 'Panjang Hari Ini',
-      'Baseline Length': 'Panjang Asas',
-      'Length Difference': 'Perbezaan Panjang',
       'Status': 'Status',
       'POSSIBLE PICC DISLODGEMENT DETECTED':
           'KEMUNGKINAN PICC TERCABUT DIKESAN',
-      'PICC LENGTH REQUIRES ATTENTION': 'PANJANG PICC MEMERLUKAN PERHATIAN',
-      'PICC LENGTH STABLE': 'PANJANG PICC STABIL',
       'Difference is greater than 1.0 cm. Please contact your healthcare provider.':
           'Perbezaan melebihi 1.0 cm. Sila hubungi penyedia penjagaan kesihatan anda.',
-      'Upload a photo to begin tracking this dressing cycle.':
+      'Upload a photo to start tracking this dressing cycle.':
           'Muat naik foto untuk mula menjejak kitaran balutan ini.',
       'Difference is within the expected range for this dressing cycle.':
           'Perbezaan berada dalam julat dijangka untuk kitaran balutan ini.',
-      'I have changed my dressing': 'Saya telah menukar balutan saya',
-      'First scan': 'Imbasan pertama',
-      'Latest - baseline': 'Terkini - asas',
-      'Scanned on': 'Diimbas pada',
       'Create Account': 'Cipta Akaun',
       'Sign In': 'Log Masuk',
       'Patient Sign In': 'Log Masuk Pesakit',
@@ -288,8 +280,7 @@ class AppStrings {
       'Battery:': 'Bateri:',
       'Connection status is managed by the backend.':
           'Status sambungan diuruskan oleh sistem backend.',
-      'PICC Length Tracker': 'Penjejak Panjang PICC',
-      'Upload a site photo to compare visible line length across this dressing cycle.':
+      'Upload a site photo to compare visible catheter length during this dressing cycle.':
           'Muat naik foto tapak untuk membandingkan panjang talian yang kelihatan sepanjang kitaran balutan ini.',
       'Not exposed': 'Tidak tersedia',
       'Monitoring services are ready. Use the Wearable Sensors panel to connect or pause monitoring.':
@@ -332,12 +323,12 @@ class AppStrings {
       'Malay': '马来语',
       'Chinese': '中文',
       'Calibration': '校准',
-      'Replace your original static neutral and functional calibration readings.':
-          '替换原本的静态中立校准和功能校准读数。',
+      'Replace your original static neutral calibration reading.':
+          '\u66ff\u6362\u539f\u672c\u7684\u9759\u6001\u4e2d\u7acb\u6821\u51c6\u8bfb\u6570\u3002',
+      'Your next sensor connection will perform static neutral calibration and save the result as the new baseline.':
+          '\u4e0b\u6b21\u8fde\u63a5\u4f20\u611f\u5668\u65f6\u4f1a\u8fdb\u884c\u9759\u6001\u4e2d\u7acb\u6821\u51c6\uff0c\u5e76\u5c06\u7ed3\u679c\u4fdd\u5b58\u4e3a\u65b0\u7684\u57fa\u7ebf\u3002',
       'Perform new baseline calibration': '执行新的基线校准',
       'Overwrite baseline calibration?': '覆盖基线校准？',
-      'Your next sensor connection will perform static neutral and functional calibration and save the results as the new baseline.':
-          '下次连接传感器时会进行静态中立和功能校准，并将结果保存为新的基线。',
       'Cancel': '取消',
       'Overwrite baseline': '覆盖基线',
       'Ready. Connect the sensors to record the new baseline calibration.':
@@ -373,8 +364,11 @@ class AppStrings {
       'Copy support email': '复制支持邮箱',
       'Developer support email copied.': '开发团队支持邮箱已复制。',
       'Wearable Sensors': '可穿戴传感器',
+      'Wearable Sensor': '可穿戴传感器',
       'Connecting sensors...': '正在连接传感器...',
+      'Connecting sensor...': '正在连接传感器...',
       'Calibrating sensors...': '正在校准传感器...',
+      'Calibrating sensor...': '正在校准传感器...',
       'Monitoring active': '监测中',
       'Monitoring paused': '监测已暂停',
       'Sensor 1: Upper Arm Sensor': '传感器 1：上臂传感器',
@@ -382,46 +376,47 @@ class AppStrings {
       'Connected': '已连接',
       'Disconnected': '未连接',
       'Connected sensors': '已连接传感器',
+      'Connected sensor': '已连接传感器',
       'Disconnect': '断开连接',
       'Reconnect Sensors': '重新连接传感器',
+      'Reconnect Sensor': '重新连接传感器',
       'Connect Sensors': '连接传感器',
+      'Connect Sensor': '连接传感器',
       'Checking sensors...': '正在检查传感器...',
-      'Static and functional calibration complete': '静态和功能校准已完成',
+      'Checking sensor...': '正在检查传感器...',
+      'Static calibration complete': '\u9759\u6001\u6821\u51c6\u5df2\u5b8c\u6210',
+      'Static calibration required': '\u9700\u8981\u9759\u6001\u6821\u51c6',
       'Calibration in progress': '校准进行中',
-      'Static and functional calibration required': '需要静态和功能校准',
-      'Check sensor positions': '检查传感器位置',
-      'Check whether sensors are swapped': '检查传感器是否戴反',
-      'Functional calibration failed. Sensor 1 and Sensor 2 may be swapped. Check that Sensor 1 is on the upper arm and Sensor 2 is on the wrist.':
-          '功能校准失败。传感器 1 和传感器 2 可能戴反。请确认传感器 1 戴在上臂，传感器 2 戴在手腕。',
       'Check sensor orientation': '检查传感器方向',
-      'Functional calibration': '功能校准',
       'Static calibration': '静态校准',
       'Preparing calibration after both sensors connect.': '两个传感器连接后准备校准。',
-      'Calibration checks finished. Please correct the sensor placement.':
-          '校准检查已完成。请调整传感器位置。',
+      'Preparing calibration after the sensor connects.': '传感器连接后准备校准。',
       'Calibration complete. Monitoring is starting.': '校准完成。监测即将开始。',
       'The static neutral reading differs from the initial reading saved when this account was created. Check both sensors and make sure each orientation marker points down toward the earth.':
           '静态中立读数与创建账户时保存的初始读数不同。请检查两个传感器，并确保方向标记朝向地面。',
-      'The functional calibration reading differs from the initial reading saved when this account was created. Make sure Sensor 1 is worn on the upper arm and Sensor 2 is worn on the wrist.':
-          '功能校准读数与创建账户时保存的初始读数不同。请确保传感器 1 戴在上臂，传感器 2 戴在手腕。',
+      'The static neutral reading differs from the initial reading saved when this account was created. Check that the sensor marker points down toward the earth.':
+          '静态中立读数与创建账户时保存的初始读数不同。请确认传感器标记朝向地面。',
+      'Static calibration differs from your initial baseline. Check that the sensor marker points down toward the earth.':
+          '静态校准与初始基线不同。请确认传感器标记朝向地面。',
+      'Static calibration failed. Check that the sensor marker points down toward the earth.':
+          '\u9759\u6001\u6821\u51c6\u5931\u8d25\u3002\u8bf7\u786e\u8ba4\u4f20\u611f\u5668\u6807\u8bb0\u671d\u5411\u5730\u9762\u3002',
       'I understand': '我明白',
       'Both sensors were not found. Check that they are powered on.':
           '未找到两个传感器。请确认传感器已开启。',
+      'The wearable sensor was not found. Check that it is powered on.':
+          '未找到可穿戴传感器。请确认它已开机。',
       'Unable to connect sensors right now.': '现在无法连接传感器。',
+      'Unable to connect the sensor right now.': '现在无法连接传感器。',
       'Unable to pause monitoring right now.': '现在无法暂停监测。',
-      'Forward tap on thigh': '向前轻碰大腿',
-      '1. Keep your PICC arm straight.': '1. 保持 PICC 手臂伸直。',
-      '2. Tap slightly forward, about 10 degrees.': '2. 向前轻碰约 10 度。',
-      '3. Repeat 3 times.': '3. 重复 3 次。',
       'Stand still for calibration': '站立不动进行校准',
       'Stand before calibration': '校准前请站立',
       'Both sensors are connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.':
           '两个传感器已连接。请舒适站立，将 PICC 手臂放松置于身体旁，然后点击“我明白”开始校准。',
+      'The wearable sensor is connected. Stand comfortably with your PICC arm relaxed beside your body, then tap I understand to begin calibration.':
+          '可穿戴传感器已连接。请舒适站立，让 PICC 手臂自然放松在身体旁，然后点击“我明白”开始校准。',
       '1. Stand comfortably with the PICC arm relaxed.': '1. 舒适站立，放松 PICC 手臂。',
       '2. Keep the arm still beside the body.': '2. 手臂保持在身体旁边不动。',
       '3. Make sure the sensor marker points down.': '3. 确保传感器标记朝下。',
-      'Upload PICC Photo': '上传 PICC 照片',
-      'Failed to upload photo': '照片上传失败',
       'Error loading events': '加载事件失败',
       'Retry': '重试',
       'No risky events detected yet.': '尚未检测到风险事件。',
@@ -447,22 +442,14 @@ class AppStrings {
       'Friendly tip: keep your PICC arm movements smooth and relaxed.':
           '温馨提示：请保持 PICC 手臂动作平稳放松。',
       'Today\'s Length': '今日长度',
-      'Baseline Length': '基线长度',
-      'Length Difference': '长度差异',
       'Status': '状态',
-      'POSSIBLE PICC DISLODGEMENT DETECTED': '检测到 PICC 可能移位',
-      'PICC LENGTH REQUIRES ATTENTION': 'PICC 长度需要注意',
-      'PICC LENGTH STABLE': 'PICC 长度稳定',
+      'POSSIBLE PICC DISLODGEMENT DETECTED': '\u68c0\u6d4b\u5230 PICC \u53ef\u80fd\u79fb\u4f4d',
       'Difference is greater than 1.0 cm. Please contact your healthcare provider.':
-          '差异大于 1.0 cm。请联系你的医疗护理人员。',
-      'Upload a photo to begin tracking this dressing cycle.':
-          '上传照片以开始追踪本次敷料周期。',
+          '\u5dee\u5f02\u5927\u4e8e 1.0 cm\u3002\u8bf7\u8054\u7cfb\u4f60\u7684\u533b\u7597\u62a4\u7406\u4eba\u5458\u3002',
+      'Upload a photo to start tracking this dressing cycle.':
+          '\u4e0a\u4f20\u7167\u7247\u4ee5\u5f00\u59cb\u8ffd\u8e2a\u672c\u6b21\u6577\u6599\u5468\u671f\u3002',
       'Difference is within the expected range for this dressing cycle.':
-          '差异在本次敷料周期的预期范围内。',
-      'I have changed my dressing': '我已更换敷料',
-      'First scan': '首次扫描',
-      'Latest - baseline': '最新 - 基线',
-      'Scanned on': '扫描于',
+          '\u5dee\u5f02\u5728\u672c\u6b21\u6577\u6599\u5468\u671f\u7684\u9884\u671f\u8303\u56f4\u5185\u3002',
       'Create Account': '创建账户',
       'Sign In': '登录',
       'Patient Sign In': '患者登录',
@@ -533,8 +520,7 @@ class AppStrings {
       'Status:': '状态：',
       'Battery:': '电量：',
       'Connection status is managed by the backend.': '连接状态由后端系统管理。',
-      'PICC Length Tracker': 'PICC 长度追踪',
-      'Upload a site photo to compare visible line length across this dressing cycle.':
+      'Upload a site photo to compare visible catheter length during this dressing cycle.':
           '上传部位照片，以比较本次敷料周期中可见导管的长度。',
       'Not exposed': '不可用',
       'Monitoring services are ready. Use the Wearable Sensors panel to connect or pause monitoring.':

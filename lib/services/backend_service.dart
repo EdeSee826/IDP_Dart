@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
 
 class RiskyEvent {
   final int id;
@@ -50,7 +49,6 @@ class BackendBatteryStatus {
   final bool connected;
   final int? rawADC;
   final Map<String, dynamic>? sensor1;
-  final Map<String, dynamic>? sensor2;
 
   BackendBatteryStatus({
     required this.voltage,
@@ -59,17 +57,11 @@ class BackendBatteryStatus {
     required this.connected,
     required this.rawADC,
     required this.sensor1,
-    required this.sensor2,
   });
 
   factory BackendBatteryStatus.fromJson(Map<String, dynamic> json) {
     final sensor1 = json['sensor1'] as Map<String, dynamic>?;
-    final sensor2 = json['sensor2'] as Map<String, dynamic>?;
-    final primary = _hasBatteryReading(sensor1)
-        ? sensor1!
-        : _hasBatteryReading(sensor2)
-            ? sensor2!
-            : sensor1 ?? sensor2 ?? const <String, dynamic>{};
+    final primary = sensor1 ?? const <String, dynamic>{};
 
     return BackendBatteryStatus(
       voltage: (primary['voltage'] as num?)?.toDouble(),
@@ -78,19 +70,11 @@ class BackendBatteryStatus {
       connected: primary['connected'] as bool? ?? false,
       rawADC: primary['raw_adc'] as int?,
       sensor1: sensor1,
-      sensor2: sensor2,
     );
-  }
-
-  static bool _hasBatteryReading(Map<String, dynamic>? sensor) {
-    return sensor?['battery_percent'] is num || sensor?['voltage'] is num;
   }
 
   int? get sensor1BatteryPercent =>
       (sensor1?['battery_percent'] as num?)?.toInt();
-
-  int? get sensor2BatteryPercent =>
-      (sensor2?['battery_percent'] as num?)?.toInt();
 }
 
 class BackendRuntimeStatus {
@@ -109,7 +93,6 @@ class BackendRuntimeStatus {
   final String? calibrationMessage;
   final int? calibrationRemainingSeconds;
   final bool? staticCalibrationPassed;
-  final bool? functionalCalibrationPassed;
 
   BackendRuntimeStatus({
     required this.backendReady,
@@ -127,7 +110,6 @@ class BackendRuntimeStatus {
     this.calibrationMessage,
     this.calibrationRemainingSeconds,
     this.staticCalibrationPassed,
-    this.functionalCalibrationPassed,
   });
 
   factory BackendRuntimeStatus.fromJson(Map<String, dynamic> json) {
@@ -162,8 +144,6 @@ class BackendRuntimeStatus {
       calibrationRemainingSeconds:
           (json['calibration_remaining_seconds'] as num?)?.toInt(),
       staticCalibrationPassed: calibrationValidation?['static_passed'] as bool?,
-      functionalCalibrationPassed:
-          calibrationValidation?['functional_passed'] as bool?,
     );
   }
 
@@ -172,7 +152,7 @@ class BackendRuntimeStatus {
   }
 
   bool get device2Connected {
-    return devices.length > 1 && devices[1].connected;
+    return false;
   }
 
   /// Static placement result for device 1 (first device in `devices`).
@@ -186,11 +166,7 @@ class BackendRuntimeStatus {
   }
 
   bool? get device2StaticPassed {
-    if (staticPlacement == null || devices.length < 2) return null;
-    final key = devices[1].name;
-    final entry = staticPlacement![key];
-    if (entry == null) return null;
-    return entry['passed'] as bool?;
+    return null;
   }
 }
 
@@ -359,29 +335,6 @@ List<CaregiverPatientSummary> _caregiverPatientsFromBody(
             CaregiverPatientSummary.fromJson(item as Map<String, dynamic>),
       )
       .toList();
-}
-
-class PiccAnalysisResult {
-  final double measurementCm;
-  final double piccPixels;
-  final double markDistancePixels;
-  final DateTime? timestamp;
-
-  const PiccAnalysisResult({
-    required this.measurementCm,
-    required this.piccPixels,
-    required this.markDistancePixels,
-    required this.timestamp,
-  });
-
-  factory PiccAnalysisResult.fromJson(Map<String, dynamic> json) {
-    return PiccAnalysisResult(
-      measurementCm: (json['measurement_cm'] as num).toDouble(),
-      piccPixels: (json['picc_pixels'] as num).toDouble(),
-      markDistancePixels: (json['mark_distance_pixels'] as num).toDouble(),
-      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? ''),
-    );
-  }
 }
 
 class BackendService {
@@ -583,14 +536,12 @@ class BackendService {
       battery: null,
       errorMessage: null,
       devices: [
-        BackendDeviceStatus(name: 'XIAO_MG24_Sensor_01', connected: false),
         BackendDeviceStatus(name: 'XIAO_MG24_Sensor_02', connected: false),
       ],
       calibrationPhase: null,
       calibrationMessage: null,
       calibrationRemainingSeconds: null,
       staticCalibrationPassed: null,
-      functionalCalibrationPassed: null,
     );
   }
 
@@ -747,35 +698,6 @@ class BackendService {
     }
   }
 
-  static Future<PiccAnalysisResult> analyzePiccImage(XFile image) async {
-    final length = await image.length();
-    final request =
-        http.MultipartRequest('POST', Uri.parse('$baseUrl/picc/analyze'))
-          ..files.add(
-            http.MultipartFile(
-              'image',
-              http.ByteStream(image.openRead()),
-              length,
-              filename: image.name.isNotEmpty
-                  ? image.name
-                  : 'picc_site_${DateTime.now().millisecondsSinceEpoch}.jpg',
-            ),
-          );
-
-    final streamedResponse = await request.send().timeout(timeout);
-    final response = await http.Response.fromStream(streamedResponse);
-    final responseBody =
-        response.body.isNotEmpty ? json.decode(response.body) : null;
-
-    if (response.statusCode == 200 && responseBody is Map<String, dynamic>) {
-      return PiccAnalysisResult.fromJson(responseBody);
-    }
-
-    final message = responseBody is Map<String, dynamic>
-        ? responseBody['error'] as String? ?? 'Failed to analyze PICC image'
-        : 'Failed to analyze PICC image';
-    throw Exception(message);
-  }
 
   // Sync appointment to Teams calendar
   static Future<BackendActionResult> syncAppointmentToTeams({

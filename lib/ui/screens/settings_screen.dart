@@ -142,7 +142,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: Text(strings.text('Overwrite baseline calibration?')),
         content: Text(
           strings.text(
-            'Your next sensor connection will perform static neutral and functional calibration and save the results as the new baseline.',
+            'Your next sensor connection will perform static neutral calibration and save the result as the new baseline.',
           ),
         ),
         actions: [
@@ -254,7 +254,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.tune_rounded,
                   title: strings.text('Calibration'),
                   subtitle: strings.text(
-                    'Replace your original static neutral and functional calibration readings.',
+                    'Replace your original static neutral calibration reading.',
                   ),
                   child: Align(
                     alignment: Alignment.centerLeft,
