@@ -1,0 +1,255 @@
+{
+  "method": "Leave-one-subject-out evaluation. Discrete actual and predicted labels from every held-out subject fold were appended to global lists. The final confusion matrix was calculated once from those pooled lists; fold confusion matrices were not summed or averaged.",
+  "feature_selection_note": "The saved model's fixed 20-feature RFE support mask was reused. StandardScaler and the SVM were refitted using training subjects only within every fold.",
+  "dataset": "C:\\Users\\User\\Desktop\\Vs Codes\\IDP_GitHub\\final_dataset_1sec_4classes_trim500_energy_only.csv",
+  "total_pooled_predictions": 100451,
+  "labels": [
+    "elbow_flexion",
+    "pronation",
+    "shoulder_adduction",
+    "sitting",
+    "standing",
+    "walking"
+  ],
+  "selected_feature_indices_zero_based": [
+    2,
+    7,
+    8,
+    12,
+    13,
+    17,
+    18,
+    19,
+    21,
+    22,
+    23,
+    30,
+    32,
+    38,
+    42,
+    48,
+    52,
+    53,
+    54,
+    55
+  ],
+  "svm_parameters": {
+    "C": 1,
+    "break_ties": false,
+    "cache_size": 200,
+    "class_weight": null,
+    "coef0": 0.0,
+    "decision_function_shape": "ovr",
+    "degree": 3,
+    "gamma": "scale",
+    "kernel": "rbf",
+    "max_iter": -1,
+    "probability": false,
+    "random_state": null,
+    "shrinking": true,
+    "tol": 0.001,
+    "verbose": false
+  },
+  "global_accuracy": 0.983205742103115,
+  "global_confusion_matrix": [
+    [
+      25831,
+      0,
+      55,
+      18,
+      30,
+      5
+    ],
+    [
+      5,
+      8538,
+      2,
+      7,
+      2,
+      24
+    ],
+    [
+      47,
+      0,
+      26011,
+      69,
+      0,
+      27
+    ],
+    [
+      163,
+      0,
+      561,
+      3801,
+      151,
+      0
+    ],
+    [
+      5,
+      0,
+      0,
+      9,
+      12049,
+      84
+    ],
+    [
+      372,
+      5,
+      26,
+      4,
+      16,
+      22534
+    ]
+  ],
+  "global_normalized_confusion_matrix": [
+    [
+      0.9958363853656657,
+      0.0,
+      0.002120359304522148,
+      0.0006939357723890667,
+      0.0011565596206484445,
+      0.00019275993677474073
+    ],
+    [
+      0.0005828864537188156,
+      0.9953369083702495,
+      0.00023315458148752622,
+      0.0008160410352063418,
+      0.00023315458148752622,
+      0.002797854977850315
+    ],
+    [
+      0.0017970482526573374,
+      0.0,
+      0.9945323851036171,
+      0.002638219775177793,
+      0.0,
+      0.0010323468685478321
+    ],
+    [
+      0.03485885372112917,
+      0.0,
+      0.1199743370402053,
+      0.812874251497006,
+      0.03229255774165954,
+      0.0
+    ],
+    [
+      0.00041162426936692186,
+      0.0,
+      0.0,
+      0.0007409236848604594,
+      0.9919321643204083,
+      0.006915287725364288
+    ],
+    [
+      0.01620420786688156,
+      0.00021779849283442957,
+      0.0011325521627390338,
+      0.00017423879426754367,
+      0.0006969551770701747,
+      0.9815742475062073
+    ]
+  ],
+  "classification_report": {
+    "elbow_flexion": {
+      "precision": 0.9775952768421451,
+      "recall": 0.9958363853656657,
+      "f1-score": 0.9866315266796531,
+      "support": 25939.0
+    },
+    "pronation": {
+      "precision": 0.9994147255062624,
+      "recall": 0.9953369083702495,
+      "f1-score": 0.9973716488522867,
+      "support": 8578.0
+    },
+    "shoulder_adduction": {
+      "precision": 0.9758394297505159,
+      "recall": 0.9945323851036171,
+      "f1-score": 0.9850972372133537,
+      "support": 26154.0
+    },
+    "sitting": {
+      "precision": 0.9726202661207779,
+      "recall": 0.812874251497006,
+      "f1-score": 0.8856011183597391,
+      "support": 4676.0
+    },
+    "standing": {
+      "precision": 0.9837524493794906,
+      "recall": 0.9919321643204083,
+      "f1-score": 0.9878253740520598,
+      "support": 12147.0
+    },
+    "walking": {
+      "precision": 0.9938255270353709,
+      "recall": 0.9815742475062073,
+      "f1-score": 0.9876618965177182,
+      "support": 22957.0
+    },
+    "accuracy": 0.983205742103115,
+    "macro avg": {
+      "precision": 0.9838412791057606,
+      "recall": 0.9620143903605255,
+      "f1-score": 0.9716981336124685,
+      "support": 100451.0
+    },
+    "weighted avg": {
+      "precision": 0.9832235999466462,
+      "recall": 0.983205742103115,
+      "f1-score": 0.982826075627861,
+      "support": 100451.0
+    }
+  },
+  "per_subject": {
+    "f1": {
+      "test_samples": 11632,
+      "accuracy": 0.9941540577716643
+    },
+    "f2": {
+      "test_samples": 11292,
+      "accuracy": 0.946068012752391
+    },
+    "f3": {
+      "test_samples": 3087,
+      "accuracy": 0.9948169744088111
+    },
+    "f4": {
+      "test_samples": 3191,
+      "accuracy": 0.9987464744594171
+    },
+    "f5": {
+      "test_samples": 11912,
+      "accuracy": 0.9832941571524513
+    },
+    "f6": {
+      "test_samples": 11576,
+      "accuracy": 0.9973220456116102
+    },
+    "m1": {
+      "test_samples": 10290,
+      "accuracy": 0.9994169096209913
+    },
+    "m2": {
+      "test_samples": 10501,
+      "accuracy": 0.9618131606513666
+    },
+    "m5": {
+      "test_samples": 9602,
+      "accuracy": 0.9997917100604041
+    },
+    "m6": {
+      "test_samples": 11117,
+      "accuracy": 0.9741836826481964
+    },
+    "m3": {
+      "test_samples": 3228,
+      "accuracy": 0.9823420074349443
+    },
+    "m4": {
+      "test_samples": 3023,
+      "accuracy": 0.9976844194508766
+    }
+  }
+}

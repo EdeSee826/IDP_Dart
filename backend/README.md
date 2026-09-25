@@ -17,7 +17,9 @@ cd backend
 pip install -r requirements-flask.txt
 ```
 
-3. Start the backend. Activity classification uses `../tcn_activity.pt`.
+3. Add your ML model files to this directory:
+   - `svm_rfe_model (1).pkl`
+   - `scaler (1).pkl`
 
 ## Running the Backend
 
@@ -35,7 +37,7 @@ You can also run the app directly with `python app.py`, but `run.py` keeps the F
 - `GET /api/health` - Check if the backend is running
 
 ### Session Control
-- `POST /api/start` - Start BLE streaming
+- `POST /api/start` - Start BLE streaming and ML prediction
 - `POST /api/stop` - Stop BLE streaming
 
 ### Event Retrieval

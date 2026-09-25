@@ -24,6 +24,7 @@ class BackendStatusState {
     this.calibrationMessage,
     this.calibrationRemainingSeconds,
     this.staticCalibrationPassed,
+    this.functionalCalibrationPassed,
     this.isLoading = false,
     this.errorMessage,
     this.lastUpdated,
@@ -46,6 +47,7 @@ class BackendStatusState {
   final String? calibrationMessage;
   final int? calibrationRemainingSeconds;
   final bool? staticCalibrationPassed;
+  final bool? functionalCalibrationPassed;
   final bool isLoading;
   final String? errorMessage;
   final DateTime? lastUpdated;
@@ -68,6 +70,7 @@ class BackendStatusState {
         calibrationMessage = null,
         calibrationRemainingSeconds = null,
         staticCalibrationPassed = null,
+        functionalCalibrationPassed = null,
         isLoading = false,
         errorMessage = null,
         lastUpdated = null;
@@ -90,6 +93,7 @@ class BackendStatusState {
     ValueGetter<String?>? calibrationMessage,
     ValueGetter<int?>? calibrationRemainingSeconds,
     ValueGetter<bool?>? staticCalibrationPassed,
+    ValueGetter<bool?>? functionalCalibrationPassed,
     bool? isLoading,
     ValueGetter<String?>? errorMessage,
     DateTime? lastUpdated,
@@ -131,6 +135,9 @@ class BackendStatusState {
       staticCalibrationPassed: staticCalibrationPassed != null
           ? staticCalibrationPassed()
           : this.staticCalibrationPassed,
+      functionalCalibrationPassed: functionalCalibrationPassed != null
+          ? functionalCalibrationPassed()
+          : this.functionalCalibrationPassed,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage != null ? errorMessage() : this.errorMessage,
       lastUpdated: lastUpdated ?? this.lastUpdated,
@@ -174,16 +181,19 @@ class BackendStatusController extends StateNotifier<BackendStatusState> {
         batteryConnected: runtimeStatus.batteryConnected,
         device1BatteryPercent: () =>
             runtimeStatus.battery?.sensor1BatteryPercent,
-        device2BatteryPercent: () => null,
+        device2BatteryPercent: () =>
+            runtimeStatus.battery?.sensor2BatteryPercent,
         device1Connected: runtimeStatus.device1Connected,
-        device2Connected: false,
+        device2Connected: runtimeStatus.device2Connected,
         device1StaticPassed: () => runtimeStatus.device1StaticPassed,
-        device2StaticPassed: () => null,
+        device2StaticPassed: () => runtimeStatus.device2StaticPassed,
         calibrationPhase: () => runtimeStatus.calibrationPhase,
         calibrationMessage: () => runtimeStatus.calibrationMessage,
         calibrationRemainingSeconds: () =>
             runtimeStatus.calibrationRemainingSeconds,
         staticCalibrationPassed: () => runtimeStatus.staticCalibrationPassed,
+        functionalCalibrationPassed: () =>
+            runtimeStatus.functionalCalibrationPassed,
         isLoading: false,
         errorMessage: () => runtimeStatus.errorMessage,
         lastUpdated: DateTime.now(),
@@ -203,6 +213,7 @@ class BackendStatusController extends StateNotifier<BackendStatusState> {
         device2Connected: false,
         calibrationRemainingSeconds: () => null,
         staticCalibrationPassed: () => null,
+        functionalCalibrationPassed: () => null,
         isLoading: false,
         errorMessage: () => 'Failed to load backend status',
         lastUpdated: DateTime.now(),

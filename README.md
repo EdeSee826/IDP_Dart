@@ -23,6 +23,7 @@ Flutter / Dart packages used by the app:
 - `fl_chart`
 - `intl`
 - `flutter_riverpod`
+- `image_picker`
 - `shared_preferences`
 - `http`
 
@@ -31,9 +32,13 @@ Python packages used by the backend:
 - `Flask`
 - `Flask-Cors`
 - `bleak`
+- `joblib`
 - `numpy`
+- `scikit-learn`
 - `scipy`
 - `Pillow`
+- `opencv-python`
+- `ultralytics`
 
 ## Run The App
 
@@ -61,4 +66,4 @@ Python packages used by the backend:
 
 - `lib/main.dart` boots the app and enters the authenticated flow.
 - `backend/app.py` is the main Flask entry point.
-- `backend/imu_interpretation_code.py` contains the IMU validation logic used by the backend.
+- `backend/imu_interpretation_code_with_functional_validation.py` contains the IMU validation logic used by the backend.

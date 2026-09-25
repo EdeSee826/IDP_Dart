@@ -1,7 +1,6 @@
 # Miscellaneous
 *.class
 *.log
-*.err
 *.pyc
 __pycache__/
 .venv/
@@ -48,6 +47,3 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-
-# Backend runtime outputs
-backend/tcn_ble_activity_log_*.csv
